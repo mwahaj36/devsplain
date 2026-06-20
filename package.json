@@ -1,23 +1,37 @@
 {
-  "name": "commie",
-  "version": "1.0.0",
-  "description": "auto commentor",
-  "homepage": "https://github.com/mwahaj36/commie#readme",
-  "bugs": {
-    "url": "https://github.com/mwahaj36/commie/issues"
+  "name": "devsplain",
+  "version": "1.1.0",
+  "description": "An agent-agnostic CLI tool that automatically adds JSDoc and inline comments to your code using free LLMs.",
+  "author": "mwahaj36",
+  "license": "MIT",
+  "main": "bin/cli.js",
+  "type": "commonjs",
+  "bin": {
+    "devsplain": "./bin/cli.js"
   },
+  "files": [
+    "bin",
+    "lib"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "cli",
+    "ai",
+    "comments",
+    "jsdoc",
+    "documentation",
+    "gemini",
+    "groq",
+    "llm"
+  ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mwahaj36/commie.git"
-  },
-  
-  "bin": {
-  "commie": "./bin/cli.js"
-},
-  "license": "ISC",
-  "author": "mwahaj36",
-  "type": "commonjs",
-  "main": "bin/cli.js",
+    "url": "git+https://github.com/mwahaj36/devsplain.git"},
+  "bugs": {
+  "url": "https://github.com/mwahaj36/devsplain/issues"  },
+"homepage": "https://github.com/mwahaj36/devsplain#readme",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   }

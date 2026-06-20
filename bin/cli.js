@@ -1,59 +1,77 @@
 #!/usr/bin/env node
+
 /**
- * Requires the necessary modules for the script to run.
- * @requires ../lib/llm.js - provides the getComments function
- * @requires ../lib/config.js - provides the getConfig function
- * @requires fs - provides file system functionality
+ * Import required modules.
+ * @module llm - Provides functionality for getting comments.
+ * @module config - Provides functionality for getting configuration.
+ * @module fs - Provides functionality for interacting with the file system.
  */
-const { getComments } = require('../lib/llm.js')
-const { getConfig } = require('../lib/config.js')
+const { getComments } = require('../lib/llm.js');
+const { getConfig } = require('../lib/config.js');
 const fs = require('fs');
 
 /**
- * Retrieves the file path from the command line arguments.
+ * Get the filepath from the command line arguments.
  * @type {string}
  */
-const filepath = process.argv[2]
+const filepath = process.argv[2];
 
 /**
- * Checks if a file path was provided.
- * If not, it logs the usage message and exits the process.
+ * Get additional command line arguments.
+ * @type {array}
+ */
+const args = process.argv.slice(3);
+
+/**
+ * Set the default mode.
+ * @type {string}
+ */
+let mode = 'default';
+
+/**
+ * Check for mode flags in the command line arguments and update the mode accordingly.
+ */
+if (args.includes('--light')) mode = 'light';
+if (args.includes('--full')) mode = 'full';
+
+/**
+ * Check if a filepath was provided.
  */
 if (!filepath) {
-    console.log("usage: commie <file>")
-    process.exit(1)
-}
-else {
+    console.log("usage: devsplain <file>");
+    process.exit(1);
+} else {
     /**
-     * Defines an asynchronous function to comment the code in the provided file.
+     * Main execution block.
      * @async
      */
     (async () => {
         /**
-         * Retrieves the configuration settings.
+         * Get the configuration.
          * @type {object}
          */
         const config = await getConfig();
-        
+
         /**
-         * Reads the contents of the file at the provided file path.
+         * Read the file at the specified filepath.
          * @type {string}
          */
         const data = fs.readFileSync(filepath, 'utf-8');
-        
-        // Log a message to indicate that the file is being analyzed
+
         console.log("Analyzing File...");
-        
+        console.log(`Analyzing File in ${mode} mode...`);
+
         /**
-         * Retrieves the commented code using the getComments function.
+         * Get comments for the code in the file.
          * @type {string}
          */
-        const commentedCode = await getComments(data, 'javascript', config)
-        
-        // Write the commented code back to the file
+        const commentedCode = await getComments(data, 'javascript', config, mode);
+
+        /**
+         * Write the commented code back to the file.
+         */
         fs.writeFileSync(filepath, commentedCode);
-        
-        // Log a success message with the file path
+
         console.log(`Successfully commented ${filepath}`);
     })();
 }
