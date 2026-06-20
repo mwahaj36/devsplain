@@ -6,19 +6,18 @@ An agent-agnostic CLI tool that automatically adds JSDoc and inline comments to 
 
 Tired of writing documentation? Let AI do the explaining for you. `devsplain` reads your code and intelligently injects standard JSDoc headers and inline comments.
 
-## Installation
+## Installation & Usage
 
-Install it globally via npm:
+You can run `devsplain` instantly without installing anything using `npx`:
+
+```bash
+npx devsplain src/utils.js
+```
+
+Alternatively, if you use it often, you can install it globally on your machine:
 
 ```bash
 npm install -g devsplain
-```
-
-## Usage
-
-Simply point `devsplain` at any file you want to comment:
-
-```bash
 devsplain src/utils.js
 ```
 
