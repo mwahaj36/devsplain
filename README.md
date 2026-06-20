@@ -1,5 +1,7 @@
 # devsplain
 
+![devsplain demo](sample.gif)
+
 An agent-agnostic CLI tool that automatically adds JSDoc and inline comments to your code using free LLMs.
 
 Tired of writing documentation? Let AI do the explaining for you. `devsplain` reads your code and intelligently injects standard JSDoc headers and inline comments.
