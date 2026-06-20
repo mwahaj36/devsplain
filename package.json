@@ -1,0 +1,24 @@
+{
+  "name": "commie",
+  "version": "1.0.0",
+  "description": "auto commentor",
+  "homepage": "https://github.com/mwahaj36/commie#readme",
+  "bugs": {
+    "url": "https://github.com/mwahaj36/commie/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mwahaj36/commie.git"
+  },
+  
+  "bin": {
+  "commie": "./bin/cli.js"
+},
+  "license": "ISC",
+  "author": "mwahaj36",
+  "type": "commonjs",
+  "main": "bin/cli.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
