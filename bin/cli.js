@@ -2,91 +2,195 @@
 
 /**
  * Import required modules.
- * @module llm - Provides functionality for getting comments.
- * @module config - Provides functionality for getting configuration.
- * @module fs - Provides functionality for interacting with the file system.
- * @module path - Provides functionality for interacting with the file system paths.
+ * @module llm
+ * @module config
+ * @module fs
+ * @module path
+ * @module readline
  */
 const { getComments } = require('../lib/llm.js');
 const { getConfig } = require('../lib/config.js');
 const fs = require('fs');
 const path = require('path');
+const readline = require('readline');
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
 /**
- * Get the filepath from the command line arguments.
+ * Asks a question and returns the answer as a promise.
+ * @param {string} query - The question to be asked.
+ * @returns {Promise<string>} The answer to the question.
+ */
+const askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
+
+/**
+ * Get the filepath and arguments from the command line.
  * @type {string}
- * @description The filepath is the first command line argument.
  */
 const filepath = process.argv[2];
-
-/**
- * Get additional command line arguments.
- * @type {array}
- * @description These arguments may include mode flags.
- */
 const args = process.argv.slice(3);
-
-/**
- * Set the default mode.
- * @type {string}
- * @description The default mode is 'default', but it can be overridden by flags.
- */
 let mode = 'default';
 
 /**
- * Check for mode flags in the command line arguments and update the mode accordingly.
+ * Determine the mode based on the command line arguments.
+ * Supported modes are: 'light', 'full', and 'clean'.
  */
 if (args.includes('--light')) mode = 'light';
 if (args.includes('--full')) mode = 'full';
+if (args.includes('--clean')) mode = 'clean';
+const isDryRun = args.includes('--dry-run');
 
 /**
- * Check if a filepath was provided.
- * @throws {void} If no filepath is provided, print usage instructions and exit.
+ * Check if a filepath was provided, if not display usage information.
  */
 if (!filepath) {
-    console.log("usage: devsplain <file>");
+    console.log("usage: devsplain <file-or-directory>");
     process.exit(1);
-} else {
-    /**
-     * Main execution block.
-     * @async
-     * @description This block executes the main functionality of the script.
-     */
+} 
+else if (!fs.existsSync(filepath)) {
+    console.log(`Error: The path '${filepath}' does not exist.`);
+    process.exit(1);
+} 
+else {
     (async () => {
         /**
          * Get the configuration.
          * @type {object}
-         * @description The configuration is retrieved from the getConfig function.
          */
         const config = await getConfig();
-        const filename = path.basename(filepath);
 
         /**
-         * Read the file at the specified filepath.
-         * @type {string}
-         * @description The file is read in UTF-8 format.
+         * Process a path, either a file or directory.
+         * @param {string} targetPath - The path to process.
+         * @returns {Promise<void>}
          */
-        const data = fs.readFileSync(filepath, 'utf-8');
-        if (data.trim() === '') {
-        console.log("File is empty, skipping.");
-        return;
-}
+        async function processPath(targetPath) {
+            /**
+             * Get the stats of the target path.
+             * @type {fs.Stats}
+             */
+            const stats = fs.statSync(targetPath);
 
-        console.log(`Analyzing ${filename} in ${mode} mode...`);
+            /**
+             * If the target path is a directory, process its contents.
+             */
+            if (stats.isDirectory()) {
+                const folderName = path.basename(targetPath);
+                /**
+                 * List of ignored folders.
+                 * @type {string[]}
+                 */
+                const ignoredFolders = [
+                    'node_modules', '.git', 'dist', 'build', 'out', 
+                    '.next', '.nuxt', '.svelte-kit', 
+                    'venv', 'env', '.venv',          
+                    '.vscode', '.idea', 'coverage'   
+                ];
+
+                /**
+                 * Check if the folder should be ignored.
+                 */
+                if (ignoredFolders.includes(folderName)) {
+                    // Folder will be skipped
+                    return;
+                }
+
+                console.log(`\n Scanning directory: ${targetPath}`);
+                /**
+                 * Read the contents of the directory.
+                 * @type {string[]}
+                 */
+                const items = fs.readdirSync(targetPath);
+                
+                /**
+                 * Process each item in the directory.
+                 */
+                for (const item of items) {
+                    const fullPath = path.join(targetPath, item);
+                    await processPath(fullPath); 
+                }
+            } 
+            /**
+             * If the target path is a file, process it.
+             */
+            else if (stats.isFile()) {
+                /**
+                 * Get the file extension.
+                 * @type {string}
+                 */
+                const ext = path.extname(targetPath).toLowerCase();
+                /**
+                 * List of valid file extensions.
+                 * @type {string[]}
+                 */
+                const validExtensions = [
+                    '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss', '.vue', '.svelte',
+                    '.py', '.java', '.c', '.cpp', '.cs', '.go', '.rb', '.php', '.rs', 
+                    '.swift', '.kt', '.dart', '.sh'
+                ];
+
+                /**
+                 * Check if the file extension is valid.
+                 */
+                if (!validExtensions.includes(ext)) {
+                    // File type is not supported, skipping
+                    return;
+                }
+
+                const filename = path.basename(targetPath);
+                /**
+                 * Read the file contents.
+                 * @type {string}
+                 */
+                const data = fs.readFileSync(targetPath, 'utf-8');
+                
+                /**
+                 * Check if the file is empty.
+                 */
+                if (data.trim() === '') {
+                    console.log(` Skipping ${filename} (Empty File)`);
+                    return;
+                }
+
+                console.log(` Analyzing ${filename} in ${mode} mode...`);
+                /**
+                 * Get the commented code.
+                 * @type {string}
+                 */
+                const commentedCode = await getComments(data, filename, config, mode);
+                
+                /**
+                 * If in dry run mode, display a preview of the commented code.
+                 */
+                if (isDryRun) {
+                    console.log(`\n --- DRY RUN PREVIEW: ${filename} ---`);
+                    console.log(commentedCode);
+                    console.log(`---------------------------------------\n`);
+                    
+                    /**
+                     * Ask the user if they want to save the commented code.
+                     */
+                    const answer = await askQuestion("Type 'write' to save to file, or press any key to discard ");
+                    
+                    if (answer.toLowerCase() == 'write') {
+                        fs.writeFileSync(targetPath, commentedCode);
+                        console.log(` Successfully saved ${targetPath}`);
+                    } else {
+                        console.log(` Skipped ${targetPath}`);
+                    }
+                } else {
+                    /**
+                     * Write the commented code to the file.
+                     */
+                    fs.writeFileSync(targetPath, commentedCode);
+                    console.log(` Successfully commented ${targetPath}`);
+                }
+            }
+        }
 
         /**
-         * Get comments for the code in the file.
-         * @type {string}
-         * @description The getComments function is called with the file data, filename, config, and mode.
+         * Start processing the provided filepath.
          */
-        const commentedCode = await getComments(data, filename, config, mode);
-
-        /**
-         * Write the commented code back to the file.
-         * @description The commented code is written to the file in the same location as the original file.
-         */
-        fs.writeFileSync(filepath, commentedCode);
-
-        console.log(`Successfully commented ${filepath}`);
+        await processPath(filepath);
+        console.log("\n All done!");
     })();
 }

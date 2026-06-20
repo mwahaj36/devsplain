@@ -1,6 +1,6 @@
 {
   "name": "devsplain",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "An agent-agnostic CLI tool that automatically adds JSDoc and inline comments to your code using free LLMs.",
   "author": "mwahaj36",
   "license": "MIT",
@@ -28,11 +28,16 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mwahaj36/devsplain.git"},
+    "url": "git+https://github.com/mwahaj36/devsplain.git"
+  },
   "bugs": {
-  "url": "https://github.com/mwahaj36/devsplain/issues"  },
-"homepage": "https://github.com/mwahaj36/devsplain#readme",
+    "url": "https://github.com/mwahaj36/devsplain/issues"
+  },
+  "homepage": "https://github.com/mwahaj36/devsplain#readme",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2"
   }
 }

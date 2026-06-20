@@ -22,27 +22,42 @@ Simply point `devsplain` at any file you want to comment:
 devsplain src/utils.js
 ```
 
+### Directory Support (Bulk Processing)
+
+You don't have to go file-by-file! Point `devsplain` at an entire directory, and it will recursively crawl through your codebase and comment everything.
+
+```bash
+devsplain src/
+```
+
+_Note: `devsplain` is smart. It automatically ignores junk folders like `node_modules`, `.git`, `dist`, `venv`, and `.next` to save you time and API tokens._
+
 ### Modes
 
 You can control exactly how aggressive the AI is with its comments using flags:
 
 - `--light`: Only adds JSDoc blocks above functions. Keeps the inside of your functions completely untouched.
 - `--full`: Highly aggressive. Explains complex logic line-by-line inside your functions.
+- `--clean`: A code scrubber. Removes ALL existing comments from the code, leaving it completely bare.
+- `--dry-run`: Interactive preview. Prints the AI's output to the terminal and waits for your approval before saving to the file. Extremely safe for testing!
 - **(Default)**: A balanced mix of JSDoc headers and sparse inline comments for complex logic.
 
-Example:
+**Usage Examples:**
 
 ```bash
 devsplain src/utils.js --light
+devsplain src/ --full
+devsplain legacy_code.js --clean
+devsplain lib/ --dry-run
 ```
 
-### Samples in this Repository
+### Supported Languages
 
-To see exactly what `devsplain` can do, the source code of this very repository was commented using the tool itself (using the Groq provider):
+Because `devsplain` uses LLMs, it natively understands almost every language syntax. It currently processes the following extensions:
 
-- `bin/cli.js`: Commented using the **Default** mode.
-- `lib/config.js`: Commented using the **--light** mode.
-- `lib/llm.js`: Commented using the **--full** mode.
+- **Web**: `.js`, `.jsx`, `.ts`, `.tsx`, `.html`, `.css`, `.scss`, `.vue`, `.svelte`
+- **Backend**: `.py`, `.java`, `.c`, `.cpp`, `.cs`, `.go`, `.rb`, `.php`, `.rs`
+- **Mobile/Scripts**: `.swift`, `.kt`, `.dart`, `.sh`
 
 ## Agent Agnostic (Bring Your Own LLM)
 
@@ -54,6 +69,12 @@ To see exactly what `devsplain` can do, the source code of this very repository 
 4. **Custom** - Point it at ANY OpenAI-compatible endpoint (e.g., local models via Ollama or LMStudio).
 
 _(Your configuration is safely stored in `~/.devsplainrc` on your machine)._
+
+---
+
+### Disclaimer
+
+**Use at your own risk.** `devsplain` uses AI to physically overwrite your source files. While the prompts are heavily engineered to prevent code refactoring or corruption, AI is non-deterministic. **Always ensure your code is committed to Git (Version Control) before running `devsplain` on an entire directory!** We are not responsible for corrupted or lost code.
 
 ## License
 
