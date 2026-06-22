@@ -6,7 +6,7 @@ An industrial-grade, agent-agnostic CLI tool that automatically adds JSDoc and i
 
 ## Key Features
 
-- **Mathematical Safety Invariants**: Uses an index-preserving splicing engine. Your functional code is mathematically verified to remain identical before and after commenting.
+- **Deterministic Code Integrity Verification**: Uses an index-preserving splicing engine. Your non-comment source lines are guaranteed to remain byte-for-byte identical after comment insertion.
 - **Multi-Language support**: Natively parses JavaScript, JSX, TypeScript, TSX, HTML, CSS, SCSS, Vue, Svelte, Python, Java, C, C++, C#, Go, Ruby, PHP, Rust, Swift, Kotlin, Dart, and Shell scripts.
 - **Comment Preservation & Tagging**: AI-generated comments are tagged with `[ds]`. Your manually written comments are safe and will never be touched by the engine.
 - **Local Deterministic Scrubber**: The `--clean` flag strips AI-generated `[ds]` comments locally using a deterministic lexical state machine—no LLM calls, API keys, or internet required.
@@ -34,6 +34,19 @@ Many AI code formatters rewrite your code entirely, exposing you to logic regres
 
 ### String Literal Guardrails
 The engine tracks lexical state across template strings, single quotes, double quotes, and multi-line docstrings (such as Python triple-quotes). Comment insertion is blocked if the target line resides within a string literal, preventing broken syntax.
+
+### Why Not AST Verification?
+
+AST verification would require language-specific parser dependencies for every supported language.
+
+`devsplain` instead uses deterministic source-preservation verification:
+
+1. Original source is loaded.
+2. Comments are inserted.
+3. Generated comments are removed.
+4. The remaining source must match the original file exactly.
+
+If any non-comment source line differs, the operation aborts.
 
 ---
 
