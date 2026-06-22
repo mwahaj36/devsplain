@@ -10,7 +10,7 @@ const { execSync } = require('child_process');
 let rl;
 let askQuestion;
 
-/** Checks if the current Git repository has uncommitted changes */
+/** Checks if the current Git repository is dirty by inspecting status. */
 function isGitDirty() {
     try {
         const gitDir = execSync('git rev-parse --is-inside-work-tree', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
@@ -23,7 +23,7 @@ function isGitDirty() {
     return false;
 }
 
-/** Determines if a line is within a string literal in the source code */
+/** Determines if a specific line index is within a string literal (handling quotes/backticks). */
 function isLineInsideString(lines, targetLineIndex, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     let inBacktick = false;
@@ -97,7 +97,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
     return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble;
 }
 
-/** Analyzes source code to identify comments and code blocks */
+/** Parses a file to identify pure comments and block structures. */
 function analyzeComments(lines, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
@@ -248,7 +248,7 @@ function analyzeComments(lines, ext = '') {
     return analysis;
 }
 
-/** Applies or removes comments from source data based on a specified mode */
+/** Splices comments into code or cleans existing ones, with safety checks. */
 function spliceComments(data, comments, mode = 'default', ext = '') {
     const hasCRLF = data.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
@@ -264,7 +264,6 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
         const finalDeletions = new Set();
         for (let i = 0; i < originalLines.length; i++) {
             const lineNum = i + 1;
-            // Never delete shebang lines
             if (originalLines[i].trim().startsWith('#!')) {
                 continue;
             }
@@ -377,7 +376,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     return annotated.map(line => line.text).join(lineEnding);
 }
 
-/** Main CLI execution logic */
+/** Main entry point for the CLI tool. */
 async function runCLI() {
     rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
@@ -430,7 +429,6 @@ Options:
         return;
     }
 
-    // Helper to retrieve specific CLI argument values
     const getArgValue = (flag) => {
         const index = args.indexOf(flag);
         if (index !== -1 && index + 1 < args.length) {
@@ -495,7 +493,7 @@ Options:
     let successCount = 0;
     let failCount = 0;
 
-    /** Recursively processes files or directories to apply comments */
+    /** Recursively processes files or directories to apply AI-generated comments. */
     async function processPath(targetPath) {
         const stats = fs.statSync(targetPath);
 
@@ -508,7 +506,6 @@ Options:
                 '.vscode', '.idea', 'coverage'   
             ];
 
-            // Skip common dependency and configuration folders
             if (ignoredFolders.includes(folderName)) {
                 return;
             }
@@ -543,7 +540,6 @@ Options:
             try {
                 let comments = [];
                 let commentedCode;
-                // Perform comment processing: Clean existing, then inject new comments via LLM
                 if (mode !== 'clean') {
                     const cleanData = spliceComments(data, [], 'clean', ext);
                     comments = await getComments(cleanData, filename, config, mode);
@@ -594,7 +590,7 @@ Options:
     rl.close();
 }
 
-// Initialize the CLI application if executed as a script
+// Check if the script is run directly vs required as a module
 if (require.main === module) {
     runCLI().catch(err => {
         console.error(err);
