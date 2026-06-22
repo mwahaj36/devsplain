@@ -1,6 +1,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { spliceComments } = require('./cli');
 
 /** Main execution block for the post-commit hook process */
 try {
@@ -45,6 +46,29 @@ try {
 
     // Iterate through identified files and execute the CLI documentation tool
     for (const file of filesToComment) {
+        try {
+            const ext = path.extname(file).toLowerCase();
+            const contentHead = fs.readFileSync(file, 'utf8');
+            let contentPrev = '';
+            try {
+                contentPrev = execSync(`git show HEAD~1:"${file}"`, { 
+                    encoding: 'utf8', 
+                    stdio: ['ignore', 'pipe', 'ignore'] 
+                });
+            } catch (prevErr) {
+            }
+
+            if (contentPrev) {
+                const cleanHead = spliceComments(contentHead, [], 'clean', ext);
+                const cleanPrev = spliceComments(contentPrev, [], 'clean', ext);
+                if (cleanHead === cleanPrev) {
+                    console.log(`[devsplain] Skipping ${file}: commit contains only comment changes.`);
+                    continue;
+                }
+            }
+        } catch (cleanErr) {
+        }
+
         console.log(`[devsplain] Automatically commenting file: ${file}`);
         try {
             execSync(`node bin/cli.js "${file}" --force${modeFlag}`, { stdio: 'inherit' });
