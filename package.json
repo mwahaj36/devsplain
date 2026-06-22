@@ -35,8 +35,7 @@
   },
   "homepage": "https://github.com/mwahaj36/devsplain#readme",
   "scripts": {
-    "test": "jest",
-    "prepare": "node bin/setup-hook.js"
+    "test": "jest"
   },
   "devDependencies": {
     "jest": "^30.4.2"
