@@ -3,10 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const { spliceComments } = require('./cli');
 
-// Wrap logic in try-catch to prevent blocking the git commit process on failure
+/** Main execution block to detect changes and process documentation generation */
 try {
+    // Prevent recursive loops if the previous commit was an automated documentation commit
     const lastCommitMsg = execSync('git log -1 --format=%s', { encoding: 'utf8' }).trim();
-    // Avoid infinite loops if this hook triggered the current commit
     if (lastCommitMsg === 'docs: auto-generated comments by devsplain') {
         process.exit(0);
     }
@@ -15,16 +15,16 @@ try {
     if (!changedFilesStr) {
         process.exit(0);
     }
+    // Retrieve list of files modified in the latest commit
     const changedFiles = changedFilesStr.split(/\r?\n/);
 
-    // Define supported file extensions for auto-documentation
     const validExtensions = [
         '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss', '.vue', '.svelte',
         '.py', '.java', '.c', '.cpp', '.cs', '.go', '.rb', '.php', '.rs',
         '.swift', '.kt', '.dart', '.sh'
     ];
 
-    // Filter changed files to include only supported extensions that currently exist
+    // Filter for supported file extensions and ensure the file still exists
     const filesToComment = changedFiles.filter(file => {
         const ext = path.extname(file).toLowerCase();
         return validExtensions.includes(ext) && fs.existsSync(file);
@@ -36,6 +36,7 @@ try {
 
     console.log(`[devsplain] Found ${filesToComment.length} file(s) in the last commit to auto-comment.`);
 
+    // Parse command line arguments to determine documentation verbosity mode
     const args = process.argv.slice(2);
     let modeFlag = '';
     if (args.includes('--light')) modeFlag = ' --light';
@@ -43,15 +44,14 @@ try {
 
     let commentedAny = false;
 
-    // Iterate through each changed file to check if content actually changed
+    // Process each valid file to determine if documentation needs updating
     for (const file of filesToComment) {
         try {
             const ext = path.extname(file).toLowerCase();
-            // Retrieve current file content from filesystem
             const contentHead = fs.readFileSync(file, 'utf8');
             let contentPrev = '';
-            // Attempt to fetch the version of the file from the previous commit for comparison
             try {
+                // Attempt to fetch the file content from the previous commit state for comparison
                 contentPrev = execSync(`git show HEAD~1:"${file}"`, { 
                     encoding: 'utf8', 
                     stdio: ['ignore', 'pipe', 'ignore'] 
@@ -60,9 +60,10 @@ try {
             }
 
             if (contentPrev) {
-                // Strip existing comments to determine if the logic changed or just documentation
+                // Strip comments from head and previous versions to detect if logic actually changed
                 const cleanHead = spliceComments(contentHead, [], 'clean', ext);
                 const cleanPrev = spliceComments(contentPrev, [], 'clean', ext);
+                // Skip processing if only comments were modified in the commit
                 if (cleanHead === cleanPrev) {
                     console.log(`[devsplain] Skipping ${file}: commit contains only comment changes.`);
                     continue;
@@ -73,7 +74,7 @@ try {
 
         console.log(`[devsplain] Automatically commenting file: ${file}`);
         try {
-            // Invoke the CLI tool to generate comments for the changed file
+            // Execute the CLI generator for the specific file
             const cliPath = path.join(__dirname, 'cli.js');
             execSync(`node "${cliPath}" "${file}" --force${modeFlag}`, { stdio: 'inherit' });
             commentedAny = true;
@@ -82,12 +83,11 @@ try {
         }
     }
 
-    // If changes were made, stage and commit them automatically to the current branch
+    // If changes were made by the generator, stage and commit the result back to the repository
     if (commentedAny) {
         const status = execSync('git diff --name-only', { encoding: 'utf8' }).trim();
         if (status.length > 0) {
             console.log('[devsplain] Staging and committing auto-generated comments...');
-            // Use --no-verify to prevent triggering this hook recursively during the commit
             execSync('git commit -am "docs: auto-generated comments by devsplain" --no-verify', { stdio: 'inherit' });
             console.log('[devsplain] Comments committed successfully! Rollback via: git reset --hard HEAD~1');
         }
