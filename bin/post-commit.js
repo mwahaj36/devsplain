@@ -3,9 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const { spliceComments } = require('./cli');
 
-/** Main execution block for the post-commit hook process */
+// Wrap logic in try-catch to prevent blocking the git commit process on failure
 try {
     const lastCommitMsg = execSync('git log -1 --format=%s', { encoding: 'utf8' }).trim();
+    // Avoid infinite loops if this hook triggered the current commit
     if (lastCommitMsg === 'docs: auto-generated comments by devsplain') {
         process.exit(0);
     }
@@ -14,17 +15,16 @@ try {
     if (!changedFilesStr) {
         process.exit(0);
     }
-    // Split diff output into an array of file paths
     const changedFiles = changedFilesStr.split(/\r?\n/);
 
-    // Define supported file types for auto-documentation
+    // Define supported file extensions for auto-documentation
     const validExtensions = [
         '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss', '.vue', '.svelte',
         '.py', '.java', '.c', '.cpp', '.cs', '.go', '.rb', '.php', '.rs',
         '.swift', '.kt', '.dart', '.sh'
     ];
 
-    // Filter list to only include existing files with supported extensions
+    // Filter changed files to include only supported extensions that currently exist
     const filesToComment = changedFiles.filter(file => {
         const ext = path.extname(file).toLowerCase();
         return validExtensions.includes(ext) && fs.existsSync(file);
@@ -36,7 +36,6 @@ try {
 
     console.log(`[devsplain] Found ${filesToComment.length} file(s) in the last commit to auto-comment.`);
 
-    // Parse CLI arguments to determine operating mode (light vs full)
     const args = process.argv.slice(2);
     let modeFlag = '';
     if (args.includes('--light')) modeFlag = ' --light';
@@ -44,12 +43,14 @@ try {
 
     let commentedAny = false;
 
-    // Iterate through identified files and execute the CLI documentation tool
+    // Iterate through each changed file to check if content actually changed
     for (const file of filesToComment) {
         try {
             const ext = path.extname(file).toLowerCase();
+            // Retrieve current file content from filesystem
             const contentHead = fs.readFileSync(file, 'utf8');
             let contentPrev = '';
+            // Attempt to fetch the version of the file from the previous commit for comparison
             try {
                 contentPrev = execSync(`git show HEAD~1:"${file}"`, { 
                     encoding: 'utf8', 
@@ -59,6 +60,7 @@ try {
             }
 
             if (contentPrev) {
+                // Strip existing comments to determine if the logic changed or just documentation
                 const cleanHead = spliceComments(contentHead, [], 'clean', ext);
                 const cleanPrev = spliceComments(contentPrev, [], 'clean', ext);
                 if (cleanHead === cleanPrev) {
@@ -71,6 +73,7 @@ try {
 
         console.log(`[devsplain] Automatically commenting file: ${file}`);
         try {
+            // Invoke the CLI tool to generate comments for the changed file
             execSync(`node bin/cli.js "${file}" --force${modeFlag}`, { stdio: 'inherit' });
             commentedAny = true;
         } catch (err) {
@@ -78,11 +81,12 @@ try {
         }
     }
 
-    // If changes were applied, commit them back to the repository automatically
+    // If changes were made, stage and commit them automatically to the current branch
     if (commentedAny) {
         const status = execSync('git diff --name-only', { encoding: 'utf8' }).trim();
         if (status.length > 0) {
             console.log('[devsplain] Staging and committing auto-generated comments...');
+            // Use --no-verify to prevent triggering this hook recursively during the commit
             execSync('git commit -am "docs: auto-generated comments by devsplain" --no-verify', { stdio: 'inherit' });
             console.log('[devsplain] Comments committed successfully! Rollback via: git reset --hard HEAD~1');
         }
