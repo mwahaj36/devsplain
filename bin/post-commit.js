@@ -61,8 +61,8 @@ try {
 
             if (contentPrev) {
                 // Strip comments from head and previous versions to detect if logic actually changed
-                const cleanHead = spliceComments(contentHead, [], 'clean', ext);
-                const cleanPrev = spliceComments(contentPrev, [], 'clean', ext);
+                const cleanHead = spliceComments(contentHead, [], 'prune', ext);
+                const cleanPrev = spliceComments(contentPrev, [], 'prune', ext);
                 // Skip processing if only comments were modified in the commit
                 if (cleanHead === cleanPrev) {
                     console.log(`[devsplain] Skipping ${file}: commit contains only comment changes.`);

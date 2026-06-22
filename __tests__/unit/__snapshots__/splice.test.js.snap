@@ -1,9 +1,9 @@
 // Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
 
 exports[`Line-Splicing Engine & Quote-Tracking golden regression test 1`] = `
-"// Main application class
+"// Main application class [ds]
 class App {
-    /** Start the application */
+    /** Start the application [ds] */
     start() {
         console.log("Starting...");
     }

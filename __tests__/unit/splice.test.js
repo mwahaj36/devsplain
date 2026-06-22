@@ -19,9 +19,9 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
         // Splice comments into the original code
         const output = spliceComments(originalCode, comments);
         const expected = [
-            '/** Greet function JSDoc */',
+            '/** Greet function JSDoc [ds] */',
             'function greet(name) {',
-            '    // Return greeting',
+            '    // Return greeting [ds]',
             '    return "Hello " + name;',
             '}'
         ].join('\n');
@@ -54,12 +54,12 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
         const output = spliceComments(originalCode, comments);
         const expected = [
             'class User {',
-            '    /**',
+            '    /** [ds]',
             '     * Constructor for User',
             '     * @constructor',
             '    */',
             '    constructor() {',
-            '\t\t// Set default name',
+            '\t\t// Set default name [ds]',
             '\t\tthis.name = "";',
             '    }',
             '}'
@@ -110,8 +110,8 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
         expect(isLineInsideString(pythonCode, 4, '.py')).toBe(false);
     });
 
-    /** Test for clean mode (deleting comment lines safely) */
-    test('should handle clean mode (deleting comment lines safely)', () => {
+    /** Test for prune mode (deleting all comment lines safely) */
+    test('should handle prune mode (deleting all comment lines safely)', () => {
         const commentedCode = [
             '// Import dependencies',
             'const fs = require("fs");',
@@ -124,16 +124,10 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
             '}'
         ].join('\n');
 
-        const deletions = [
-            { line: 1, action: 'delete' },
-            { line: 3, action: 'delete' },
-            { line: 4, action: 'delete' },
-            { line: 5, action: 'delete' },
-            { line: 7, action: 'delete' }
-        ];
+        const deletions = [];
 
-        // Splice comments into the original code in clean mode
-        const output = spliceComments(commentedCode, deletions, 'clean');
+        // Splice comments into the original code in prune mode
+        const output = spliceComments(commentedCode, deletions, 'prune');
         const expected = [
             'const fs = require("fs");',
             'function read() {',
@@ -144,8 +138,38 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
         expect(output).toBe(expected);
     });
 
-    /** Test for preventing code deletion in clean mode */
-    test('should prevent code deletion in clean mode (safety block)', () => {
+    /** Test for clean mode (only deleting [ds] comments) */
+    test('should handle clean mode (deleting only [ds] comments)', () => {
+        const commentedCode = [
+            '// User written comment',
+            'const fs = require("fs");',
+            '/** [ds]',
+            ' * Generated jsdoc',
+            ' */',
+            'function read() {',
+            '    // User logic comment',
+            '    // Generated inline [ds]',
+            '    return fs.readFileSync("file.txt", "utf8");',
+            '}'
+        ].join('\n');
+
+        const deletions = [];
+
+        const output = spliceComments(commentedCode, deletions, 'clean');
+        const expected = [
+            '// User written comment',
+            'const fs = require("fs");',
+            'function read() {',
+            '    // User logic comment',
+            '    return fs.readFileSync("file.txt", "utf8");',
+            '}'
+        ].join('\n');
+
+        expect(output).toBe(expected);
+    });
+
+    /** Test for preventing code deletion in prune mode */
+    test('should prevent code deletion in prune mode (safety block)', () => {
         const code = [
             'const x = 1;',
             '// comment here',
@@ -157,8 +181,8 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
             { line: 2, action: 'delete' }
         ];
 
-        // Splice comments into the original code in clean mode with safety block
-        const output = spliceComments(code, deletions, 'clean');
+        // Splice comments into the original code in prune mode with safety block
+        const output = spliceComments(code, deletions, 'prune');
         const expected = [
             'const x = 1;',
             'const y = 2;'

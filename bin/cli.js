@@ -258,21 +258,71 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
 
     const annotated = originalLines.map((text, index) => ({ text, originalIndex: index }));
     let analysis = null;
+    let dsBlocks = new Set();
 
-    if (mode === 'clean') {
+    if (mode === 'clean' || mode === 'prune') {
         analysis = analyzeComments(originalLines, ext);
         const finalDeletions = new Set();
-        for (let i = 0; i < originalLines.length; i++) {
-            const lineNum = i + 1;
-            if (originalLines[i].trim().startsWith('#!')) {
-                continue;
-            }
-            if (analysis[i].isPureComment) {
-                finalDeletions.add(lineNum);
-            } else if (analysis[i].commentStartIndex !== -1) {
-                annotated[i].text = originalLines[i].slice(0, analysis[i].commentStartIndex).trimEnd();
+        
+        if (mode === 'clean') {
+            let i = 0;
+            while (i < originalLines.length) {
+                if (analysis[i].isInsideBlock) {
+                    let start = i;
+                    let end = i;
+                    while (end < originalLines.length && analysis[end].isInsideBlock) end++;
+                    
+                    let blockStart = start - 1;
+                    let blockEnd = end - 1;
+                    
+                    let hasDs = false;
+                    for (let k = blockStart; k <= blockEnd; k++) {
+                        if (originalLines[k].includes('[ds]')) hasDs = true;
+                    }
+                    
+                    if (hasDs) {
+                        for (let k = blockStart; k <= blockEnd; k++) {
+                            dsBlocks.add(k + 1);
+                        }
+                    }
+                    i = end;
+                } else {
+                    i++;
+                }
             }
         }
+
+        for (let i = 0; i < originalLines.length; i++) {
+            const lineNum = i + 1;
+            const lineStr = originalLines[i];
+            const lineAnalysis = analysis[i];
+
+            if (lineStr.trim().startsWith('#!')) {
+                continue;
+            }
+
+            if (mode === 'prune') {
+                if (lineAnalysis.isPureComment) {
+                    finalDeletions.add(lineNum);
+                } else if (lineAnalysis.commentStartIndex !== -1) {
+                    annotated[i].text = lineStr.slice(0, lineAnalysis.commentStartIndex).trimEnd();
+                }
+            } else if (mode === 'clean') {
+                const isDsBlockLine = dsBlocks.has(lineNum);
+                const hasDsInline = lineStr.includes('[ds]');
+
+                if (lineAnalysis.isPureComment) {
+                    if (isDsBlockLine || hasDsInline) {
+                        finalDeletions.add(lineNum);
+                    }
+                } else if (lineAnalysis.commentStartIndex !== -1) {
+                    if (isDsBlockLine || hasDsInline) {
+                        annotated[i].text = lineStr.slice(0, lineAnalysis.commentStartIndex).trimEnd();
+                    }
+                }
+            }
+        }
+
 
         for (const c of validComments) {
             const lineIdx = c.line - 1;
@@ -324,9 +374,23 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
             const indentMatch = targetLine.match(/^([ \t]*)/);
             const indentation = indentMatch ? indentMatch[1] : '';
 
-            const commentLines = c.comment.split(/\r?\n/).map(line => {
-                const trimmed = line.trimStart();
+            const commentLines = c.comment.split(/\r?\n/).map((line, idx) => {
+                let trimmed = line.trimStart();
                 if (!trimmed) return '';
+
+                const isSingleLine = trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('--');
+                const isBlockEnd = trimmed.endsWith('*/') || trimmed.endsWith('-->');
+
+                if (isSingleLine) {
+                    trimmed = trimmed + ' [ds]';
+                } else if (idx === 0) {
+                    if (isBlockEnd) {
+                        trimmed = trimmed.replace(/(\*\/|-->)$/, '[ds] $1');
+                    } else {
+                        trimmed = trimmed + ' [ds]';
+                    }
+                }
+
                 if (trimmed.startsWith('*') && !trimmed.startsWith('*/') && !trimmed.startsWith('/*')) {
                     return indentation + ' ' + trimmed;
                 }
@@ -348,12 +412,17 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
         if (text === originalLine) {
             return true;
         }
-        if (mode === 'clean' && analysis) {
+        if ((mode === 'clean' || mode === 'prune') && analysis) {
             const lineAnalysis = analysis[origIdx];
             if (lineAnalysis && lineAnalysis.commentStartIndex !== -1 && !lineAnalysis.isPureComment) {
-                const expectedStripped = originalLine.slice(0, lineAnalysis.commentStartIndex).trimEnd();
-                if (text === expectedStripped) {
-                    return true;
+                const isDsBlockLine = dsBlocks.has(origIdx + 1);
+                const hasDsInline = originalLine.includes('[ds]');
+                
+                if (mode === 'prune' || (mode === 'clean' && (hasDsInline || isDsBlockLine))) {
+                    const expectedStripped = originalLine.slice(0, lineAnalysis.commentStartIndex).trimEnd();
+                    if (text === expectedStripped) {
+                        return true;
+                    }
                 }
             }
         }
@@ -395,6 +464,8 @@ Options:
   --full              Add detailed JSDoc/block comments and inline comments
   --dry-run           Preview comments without writing to file
   --force             Bypass the dirty Git tree safety check
+  --clean             Scrub only devsplain-generated [ds] comments
+  --prune             Destructively scrub ALL comments from files
   --provider <name>   Override AI provider (gemini, groq, openai, custom)
   --model <name>      Override AI model name
   --api-key <key>     Override API key for the provider
@@ -461,6 +532,7 @@ Options:
     if (args.includes('--light')) mode = 'light';
     if (args.includes('--full')) mode = 'full';
     if (args.includes('--clean')) mode = 'clean';
+    if (args.includes('--prune')) mode = 'prune';
     const isDryRun = args.includes('--dry-run');
     const isForce = args.includes('--force');
 
