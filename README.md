@@ -104,6 +104,14 @@ devsplain lib/ --clean
 devsplain src/utils.ts --provider gemini --model gemini-2.0-flash --api-key YOUR_KEY
 ```
 
+> [!WARNING]
+> **Directory Traversal Caution**
+> The built-in list of ignored folders (like `node_modules`, `.git`, `dist`, etc.) is not exhaustive. If you run `devsplain` on a broad directory that contains unignored directories (such as local caches or build directories), it may start commenting unwanted files in random folders.
+> 
+> To prevent this, it is highly recommended to either:
+> 1. Use the **Automated Git Hooks** to comment only on files modified in your commits.
+> 2. Pass specific files or selective subfolders manually (e.g., `devsplain src/utils.ts`) instead of targeting broad directories.
+
 ---
 
 ## Environment Variables
@@ -120,6 +128,10 @@ For headless environments, CI pipelines, or automated scripts, `devsplain` respe
 ## Automated Git Hooks
 
 Ensure all code changes in your repository are automatically documented by configuring Git hooks.
+
+> [!NOTE]
+> **Commit Duration Note**
+> When the Git hooks are enabled, committing code may take a few seconds longer. This is because `devsplain` needs to call the AI provider, generate comments, and splice them into the modified files before completing the commit cycle.
 
 ### Installation
 Run the hook setup command inside your Git repository:
