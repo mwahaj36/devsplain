@@ -5,25 +5,25 @@ const readline = require('readline');
 
 /**
  * Orchestrates the installation of Git pre-commit and post-commit hooks.
- * Detects the local .git directory and configures hooks with user-specified mode.
+ * Sets up necessary directories and writes hook files with user-selected configuration.
 */
 async function installHooks() {
     try {
-        // Determine the path to the .git directory
+        // Determine the actual git directory path using git command line tool
         const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
         const hooksDir = path.join(gitDir, 'hooks');
+        // Ensure the hooks directory exists before attempting to write files
         if (!fs.existsSync(hooksDir)) {
             fs.mkdirSync(hooksDir, { recursive: true });
         }
 
         let modeChoice = '1';
-        // Interact with user via terminal to select documentation verbosity
+        // Prompt the user for mode selection only if running in an interactive terminal session
         if (process.stdout.isTTY) {
             const rl = readline.createInterface({
                 input: process.stdin,
                 output: process.stdout
             });
-            // Promisify readline to allow async flow control
             const askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
 
             console.log('\nSelect default commenting mode for Git commits:');
@@ -35,7 +35,7 @@ async function installHooks() {
             rl.close();
         }
 
-        // Map selected mode to command-line arguments for the post-commit script
+        // Map user input to CLI arguments for the post-commit script execution
         let modeArgs = '';
         if (modeChoice === '2') {
             modeArgs = ' --light';
@@ -43,7 +43,7 @@ async function installHooks() {
             modeArgs = ' --full';
         }
 
-        // Create the executable pre-commit script
+        // Generate and write the pre-commit shell script to trigger tests before committing
         const preCommitHookPath = path.join(hooksDir, 'pre-commit');
         const preCommitContent = `#!/bin/sh
 # devsplain native pre-commit hook
@@ -54,14 +54,14 @@ fi
 `;
         fs.writeFileSync(preCommitHookPath, preCommitContent);
         try {
-            // Ensure the hook file is executable
+            // Apply execute permissions to the hook file
             fs.chmodSync(preCommitHookPath, 0o755);
         } catch (err) {}
 
-        // Locate the source script for post-commit actions
+        // Normalize the path for cross-platform compatibility when injecting into shell script
         const postCommitScript = path.join(__dirname, 'post-commit.js').replace(/\\/g, '/');
 
-        // Create the executable post-commit script that calls the documentation engine
+        // Generate and write the post-commit shell script to execute the documentation generation
         const postCommitHookPath = path.join(hooksDir, 'post-commit');
         const postCommitContent = `#!/bin/sh
 # devsplain native post-commit hook
@@ -69,8 +69,8 @@ echo "Auto-generating comments for files in the last commit..."
 node "${postCommitScript}"${modeArgs} || exit 1
 `;
         fs.writeFileSync(postCommitHookPath, postCommitContent);
+        // Apply execute permissions to the hook file
         try {
-            // Ensure the hook file is executable
             fs.chmodSync(postCommitHookPath, 0o755);
         } catch (err) {}
 
@@ -80,6 +80,7 @@ node "${postCommitScript}"${modeArgs} || exit 1
     }
 }
 
+// Execute installation automatically if this script is run as the entry point
 if (require.main === module) {
     installHooks();
 }
