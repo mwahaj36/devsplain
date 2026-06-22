@@ -22,7 +22,7 @@ function isGitDirty() {
     return false;
 }
 
-/** Determines if a specific line index is inside a string or multiline literal */
+/** Determines if a specific line index falls within a multi-line string or block */
 function isLineInsideString(lines, targetLineIndex, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     let inBacktick = false;
@@ -96,7 +96,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
     return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble;
 }
 
-/** Analyzes code to identify pure comment lines and block boundaries */
+/** Analyzes code to determine which lines are purely comments */
 function analyzeComments(lines, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
@@ -247,7 +247,7 @@ function analyzeComments(lines, ext = '') {
     return analysis;
 }
 
-/** Splicers or removes comments from source data based on the requested mode */
+/** Splices AI-generated comments into source code or cleans existing ones */
 function spliceComments(data, comments, mode = 'default', ext = '') {
     const hasCRLF = data.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
@@ -255,9 +255,11 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     const sortedComments = [...comments].sort((a, b) => b.line - a.line);
     const validComments = sortedComments.filter(c => c.line >= 1 && c.line <= originalLines.length + 1);
 
+    // Map lines to objects to track original positioning after splicing
     const annotated = originalLines.map((text, index) => ({ text, originalIndex: index }));
     let analysis = null;
 
+    // Logic for removing existing comments
     if (mode === 'clean') {
         analysis = analyzeComments(originalLines, ext);
         const finalDeletions = new Set();
@@ -279,6 +281,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
 
         const linesToDelete = Array.from(finalDeletions).sort((a, b) => b - a);
 
+        // Process deletions in reverse to maintain line integrity
         for (const lineNum of linesToDelete) {
             const targetLine = originalLines[lineNum - 1];
             if (!targetLine) continue;
@@ -313,6 +316,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
             }
 
             const targetLine = originalLines[c.line - 1] || '';
+            // Determine indentation level for new comment blocks
             const indentMatch = targetLine.match(/^([ \t]*)/);
             const indentation = indentMatch ? indentMatch[1] : '';
 
@@ -330,6 +334,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
         }
     }
 
+    // Verify that the result matches expected output before committing to disk
     const filtered = annotated.filter(line => line.originalIndex !== -1);
     const filteredText = filtered.map(line => line.text);
     const filteredIndices = filtered.map(line => line.originalIndex);
@@ -368,7 +373,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     return annotated.map(line => line.text).join(lineEnding);
 }
 
-/** Main CLI entry point handler */
+/** Main CLI execution loop */
 async function runCLI() {
     rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
@@ -485,7 +490,7 @@ Options:
     let successCount = 0;
     let failCount = 0;
 
-    /** Recursively traverses directories to process files */
+    /** Recursively process files or directories */
     async function processPath(targetPath) {
         const stats = fs.statSync(targetPath);
 
@@ -529,6 +534,7 @@ Options:
             }
 
             console.log(` Analyzing ${filename} in ${mode} mode...`);
+            // Perform comment generation if not in 'clean' mode
             try {
                 let comments = [];
                 let commentedCode;
@@ -545,6 +551,7 @@ Options:
                     console.log(`---------------------------------------\n`);
                     const answer = await askQuestion("Type 'write' to save to file, or press any key to discard: ");
                     if (answer.toLowerCase() === 'write') {
+                        // Atomic write: write to temp file then rename
                         const tempPath = targetPath + '.tmp';
                         fs.writeFileSync(tempPath, commentedCode, 'utf8');
                         fs.renameSync(tempPath, targetPath);
@@ -582,7 +589,7 @@ Options:
     rl.close();
 }
 
-// If running as a standalone script, start the CLI; otherwise export helpers
+// Execute main if run directly, otherwise export utility functions
 if (require.main === module) {
     runCLI().catch(err => {
         console.error(err);
