@@ -75,5 +75,8 @@ node bin/post-commit.js${modeArgs} || exit 1
     }
 }
 
-// Execute the hook installation sequence
-installHooks();
+// Auto-run when executed directly; export for programmatic use from cli.js
+if (require.main === module) {
+    installHooks();
+}
+module.exports = installHooks;

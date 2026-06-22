@@ -416,7 +416,8 @@ Options:
 
     if (args.includes('--setup-hook')) {
         rl.close();
-        require('./setup-hook.js');
+        const installHooks = require('./setup-hook.js');
+        await installHooks();
         return;
     }
 
