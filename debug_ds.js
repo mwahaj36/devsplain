@@ -1,6 +1,7 @@
 const { spliceComments } = require('./bin/cli.js'); 
 const fs = require('fs');
 const cliCode = fs.readFileSync('./bin/cli.js', 'utf8');
+// Extract the analyzeComments function logic from the cli file via eval to perform analysis [ds]
 const analyzeCode = cliCode.slice(cliCode.indexOf('function analyzeComments'), cliCode.indexOf('function spliceComments'));
 eval(analyzeCode);
 
@@ -24,13 +25,16 @@ let dsBlocks = new Set();
 let finalDeletions = new Set();
 const annotated = originalLines.map((text, index) => ({ text, originalIndex: index }));
 
+            // Identify continuous blocks of generated code and tag lines containing [ds] markers [ds]
             let i = 0;
             while (i < originalLines.length) {
                 if (analysis[i].isInsideBlock) {
+                    // Track the boundaries of the detected analysis block [ds]
                     let start = i; // first line of body
                     let end = i;
                     while (end < originalLines.length && analysis[end].isInsideBlock) end++;
                     
+                    // Shift indices to account for the preceding line before the detected block [ds]
                     let blockStart = start - 1;
                     let blockEnd = end - 1; 
                     
@@ -52,6 +56,7 @@ const annotated = originalLines.map((text, index) => ({ text, originalIndex: ind
 
 console.log('dsBlocks:', dsBlocks);
 
+        // Iterate through lines to filter out marked [ds] comments and cleanup inline documentation [ds]
         for (let i = 0; i < originalLines.length; i++) {
             const lineNum = i + 1;
             const lineStr = originalLines[i];
@@ -75,6 +80,7 @@ console.log('dsBlocks:', dsBlocks);
             }
         }
 
+        // Sort indices in descending order to allow safe splicing of the array without offset issues [ds]
         const linesToDelete = Array.from(finalDeletions).sort((a, b) => b - a);
 
         for (const lineNum of linesToDelete) {

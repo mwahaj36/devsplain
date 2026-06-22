@@ -23,6 +23,7 @@ function isGitDirty() {
     return false;
 }
 
+/** Determines if a specific line index is within a string literal (handling quotes/backticks). [ds] */
 /** Determines if a specific line index is within a string literal (handling quotes/backticks). */
 function isLineInsideString(lines, targetLineIndex, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
@@ -97,6 +98,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
     return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble;
 }
 
+/** Parses a file to identify pure comments and block structures. [ds] */
 /** Parses a file to identify pure comments and block structures. */
 function analyzeComments(lines, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
@@ -248,6 +250,7 @@ function analyzeComments(lines, ext = '') {
     return analysis;
 }
 
+/** Splices comments into code or cleans existing ones, with safety checks. [ds] */
 /** Splices comments into code or cleans existing ones, with safety checks. */
 function spliceComments(data, comments, mode = 'default', ext = '') {
     const hasCRLF = data.includes('\r\n');
@@ -445,6 +448,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     return annotated.map(line => line.text).join(lineEnding);
 }
 
+/** Main entry point for the CLI tool. [ds] */
 /** Main entry point for the CLI tool. */
 async function runCLI() {
     rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -500,6 +504,7 @@ Options:
         return;
     }
 
+    // Helper to extract flag values from command line arguments [ds]
     const getArgValue = (flag) => {
         const index = args.indexOf(flag);
         if (index !== -1 && index + 1 < args.length) {
@@ -565,6 +570,7 @@ Options:
     let successCount = 0;
     let failCount = 0;
 
+    /** Recursively processes files or directories to apply AI-generated comments. [ds] */
     /** Recursively processes files or directories to apply AI-generated comments. */
     async function processPath(targetPath) {
         const stats = fs.statSync(targetPath);
@@ -662,6 +668,7 @@ Options:
     rl.close();
 }
 
+// Check if the script is run directly vs required as a module [ds]
 // Check if the script is run directly vs required as a module
 if (require.main === module) {
     runCLI().catch(err => {
