@@ -1,11 +1,10 @@
 # devsplain
-AI-generated comments without AI-generated code changes.
+An agent-agnostic CLI tool that adds JSDoc and inline comments using state-of-the-art LLMs while preserving non-comment source lines byte-for-byte through deterministic verification.
+
+![devsplain demo](sample.gif)
 
 devsplain never rewrites executable code.
 If the original source cannot be reproduced exactly after comment insertion, the operation aborts.
-
-An agent-agnostic CLI tool that adds JSDoc and inline comments using state-of-the-art LLMs while preserving non-comment source lines byte-for-byte through deterministic verification.
-
 ---
 
 ## Key Features
