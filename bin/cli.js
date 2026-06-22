@@ -264,6 +264,10 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
         const finalDeletions = new Set();
         for (let i = 0; i < originalLines.length; i++) {
             const lineNum = i + 1;
+            // Never delete shebang lines
+            if (originalLines[i].trim().startsWith('#!')) {
+                continue;
+            }
             if (analysis[i].isPureComment) {
                 finalDeletions.add(lineNum);
             } else if (analysis[i].commentStartIndex !== -1) {
