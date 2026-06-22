@@ -47,8 +47,10 @@ async function installHooks() {
         const preCommitHookPath = path.join(hooksDir, 'pre-commit');
         const preCommitContent = `#!/bin/sh
 # devsplain native pre-commit hook
-echo "Running pre-commit tests..."
-npm test || exit 1
+if [ -f package.json ] && grep -q '"test"' package.json 2>/dev/null; then
+  echo "Running pre-commit tests..."
+  npm test || exit 1
+fi
 `;
         fs.writeFileSync(preCommitHookPath, preCommitContent);
         try {
