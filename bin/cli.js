@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 
 const { getComments } = require('../lib/llm.js');
 const { getConfig } = require('../lib/config.js');
@@ -290,6 +291,11 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
             const trimmedLine = targetLine.trim();
 
             const lineAnalysis = analysis[lineNum - 1];
+            // Preserve shebangs (e.g. #!/usr/bin/env node) — never treat as comment
+            if (trimmedLine.startsWith('#!')) {
+                continue;
+            }
+
             const isCommentLine = 
                 lineAnalysis.isInsideBlock ||
                 lineAnalysis.isPureComment ||
