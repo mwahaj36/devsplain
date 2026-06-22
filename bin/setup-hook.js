@@ -6,6 +6,7 @@ const readline = require('readline');
 
 /** Installs native Git hooks for auto-commenting and pre-commit testing */
 /** Installs native Git hooks for auto-commenting and pre-commit testing */
+/** Installs native Git hooks for auto-commenting and pre-commit testing */
 async function installHooks() {
     try {
         // Get the path to the Git directory
@@ -16,6 +17,7 @@ async function installHooks() {
         // Ensure the hooks directory exists
         // Ensure hooks directory exists
         // Create the hooks directory if it does not exist
+        // Create the hooks directory if it does not exist
         if (!fs.existsSync(hooksDir)) {
             fs.mkdirSync(hooksDir, { recursive: true });
         }
@@ -23,6 +25,7 @@ async function installHooks() {
         // Set default mode choice
         // Set default mode choice to balanced (mix of JSDoc and sparse inline comments)
         let modeChoice = '1';
+        // Set default mode choice to balanced (mix of JSDoc and sparse inline comments)
         if (process.stdout.isTTY) {
             // Create a readline interface for user input
             const rl = readline.createInterface({
@@ -31,9 +34,11 @@ async function installHooks() {
             });
             // Create a readline interface for user input
             // Function to ask a question and resolve with the user's answer
+            // Function to ask a question and resolve with the user's answer
             const askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
 
             // Display mode selection options
+            // Display mode selection options to the user
             // Display mode selection options to the user
             console.log('\nSelect default commenting mode for Git commits:');
             console.log('1. Balanced (mix of JSDoc and sparse inline comments)');
@@ -45,6 +50,7 @@ async function installHooks() {
         }
 
         // Determine mode arguments based on the user's selection
+        // Determine mode arguments based on the user's selection
         // Determine mode arguments based on user selection
         let modeArgs = '';
         if (modeChoice === '2') {
@@ -53,9 +59,11 @@ async function installHooks() {
             modeArgs = ' --full';
         }
 
+        /** Setup pre-commit hook to run tests */
         // Setup pre-commit hook to run tests
         /** Setup pre-commit hook to run tests */
         // 1. Setup pre-commit hook (to run tests)
+        // Define the pre-commit hook script
         // Define the pre-commit hook script
         // Define the pre-commit hook script
         const preCommitHookPath = path.join(hooksDir, 'pre-commit');
@@ -70,8 +78,10 @@ npm test || exit 1
         } catch (err) {}
 
         /** Setup post-commit hook for auto-commenting */
+        /** Setup post-commit hook for auto-commenting */
         // Setup post-commit hook for auto-commenting
         // 2. Setup post-commit hook (to auto-comment)
+        // Define the post-commit hook script
         // Define the post-commit hook script
         // Define the post-commit hook script
         const postCommitHookPath = path.join(hooksDir, 'post-commit');
@@ -86,8 +96,10 @@ node bin/post-commit.js${modeArgs} || exit 1
         } catch (err) {}
 
         // Display success message after installing hooks
+        // Display success message after installing hooks
         // Display success message
         console.log('Success: Native Git pre-commit and post-commit hooks installed successfully!');
+    // Catch any errors during hook installation
     // Catch any errors during hook installation
     // Catch any errors during hook installation
     } catch (e) {
