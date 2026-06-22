@@ -9,7 +9,7 @@ const { execSync } = require('child_process');
 let rl;
 let askQuestion;
 
-/** Checks if the current Git repository has uncommitted changes */
+/** Checks if the current directory is a git repository and has uncommitted changes. */
 function isGitDirty() {
     try {
         const gitDir = execSync('git rev-parse --is-inside-work-tree', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
@@ -22,51 +22,83 @@ function isGitDirty() {
     return false;
 }
 
-/** Checks if a line of code is inside a string literal */
-function isLineInsideString(lines, targetLineIndex) {
+/** Determines if a specific line index falls within a string literal (backticks, double/single quotes, or triple quotes). */
+function isLineInsideString(lines, targetLineIndex, ext = '') {
+    const isPython = ext.toLowerCase() === '.py';
     let inBacktick = false;
     let inTripleDouble = false;
     let inTripleSingle = false;
+    let inSingle = false;
+    let inDouble = false;
+
     for (let i = 0; i < targetLineIndex; i++) {
         const line = lines[i];
         let j = 0;
         while (j < line.length) {
-            if (!inBacktick && !inTripleSingle) {
-                if (line.slice(j, j + 3) === '"""') {
-                    inTripleDouble = !inTripleDouble;
-                    j += 3;
-                    continue;
+            if (isPython) {
+                if (!inTripleSingle) {
+                    if (line.slice(j, j + 3) === '"""') {
+                        inTripleDouble = !inTripleDouble;
+                        j += 3;
+                        continue;
+                    }
                 }
-            }
-            if (!inBacktick && !inTripleDouble) {
-                if (line.slice(j, j + 3) === "'''") {
-                    inTripleSingle = !inTripleSingle;
-                    j += 3;
-                    continue;
+                if (!inTripleDouble) {
+                    if (line.slice(j, j + 3) === "'''") {
+                        inTripleSingle = !inTripleSingle;
+                        j += 3;
+                        continue;
+                    }
                 }
-            }
-            if (!inTripleDouble && !inTripleSingle) {
-                if (line[j] === '`') {
+            } else {
+                if (!inSingle && !inDouble && line[j] === '`') {
                     let escaped = false;
                     let k = j - 1;
                     while (k >= 0 && line[k] === '\\') {
                         escaped = !escaped;
-                        k
+                        k--;
                     }
                     if (!escaped) {
                         inBacktick = !inBacktick;
                     }
                 }
+                if (!inBacktick) {
+                    if (line[j] === '"' && !inSingle) {
+                        let escaped = false;
+                        let k = j - 1;
+                        while (k >= 0 && line[k] === '\\') {
+                            escaped = !escaped;
+                            k--;
+                        }
+                        if (!escaped) {
+                            inDouble = !inDouble;
+                        }
+                    } else if (line[j] === "'" && !inDouble) {
+                        let escaped = false;
+                        let k = j - 1;
+                        while (k >= 0 && line[k] === '\\') {
+                            escaped = !escaped;
+                            k--;
+                        }
+                        if (!escaped) {
+                            inSingle = !inSingle;
+                        }
+                    }
+                }
             }
             j++;
         }
+        if (!isPython) {
+            inSingle = false;
+            inDouble = false;
+        }
     }
-    return inBacktick || inTripleDouble || inTripleSingle;
+    return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble;
 }
 
-
-
-function analyzeComments(lines) {
+function analyzeComments(lines, ext = '') {
+    const isPython = ext.toLowerCase() === '.py';
+    const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
     const analysis = [];
     let inBacktick = false;
     let inTripleDouble = false;
@@ -100,43 +132,56 @@ function analyzeComments(lines) {
                 continue;
             }
             if (!inSingle && !inDouble && !inBacktick && !inTripleSingle && !inTripleDouble) {
-                if (line.slice(j, j + 2) === '//' || line[j] === '#') {
-                    commentStartIndex = j;
-                    break;
-                }
-                if (line.slice(j, j + 2) === '--') {
-                    commentStartIndex = j;
-                    break;
-                }
-                if (line.slice(j, j + 2) === '/*') {
-                    commentStartIndex = j;
-                    inBlockJS = true;
-                    j += 2;
-                    continue;
-                }
-                if (line.slice(j, j + 4) === '<!--') {
-                    commentStartIndex = j;
-                    inBlockHTML = true;
-                    j += 4;
-                    continue;
+                if (isPython) {
+                    if (line[j] === '#') {
+                        commentStartIndex = j;
+                        break;
+                    }
+                } else if (isHTML) {
+                    if (line.slice(j, j + 4) === '<!--') {
+                        commentStartIndex = j;
+                        inBlockHTML = true;
+                        j += 4;
+                        continue;
+                    }
+                    if (line.slice(j, j + 2) === '//') {
+                        commentStartIndex = j;
+                        break;
+                    }
+                } else {
+                    if (line.slice(j, j + 2) === '//') {
+                        commentStartIndex = j;
+                        break;
+                    }
+                    if (line.slice(j, j + 2) === '/*') {
+                        commentStartIndex = j;
+                        inBlockJS = true;
+                        j += 2;
+                        continue;
+                    }
+                    if (line[j] === '#') {
+                        commentStartIndex = j;
+                        break;
+                    }
                 }
             }
-            if (!inSingle && !inDouble) {
-                if (!inBacktick && !inTripleSingle) {
+            if (isPython) {
+                if (!inTripleSingle) {
                     if (line.slice(j, j + 3) === '"""') {
                         inTripleDouble = !inTripleDouble;
                         j += 3;
                         continue;
                     }
                 }
-                if (!inBacktick && !inTripleDouble) {
+                if (!inTripleDouble) {
                     if (line.slice(j, j + 3) === "'''") {
                         inTripleSingle = !inTripleSingle;
                         j += 3;
                         continue;
                     }
                 }
-                if (!inTripleDouble && !inTripleSingle) {
+            } else {
+                if (!inSingle && !inDouble) {
                     if (line[j] === '`') {
                         let escaped = false;
                         let k = j - 1;
@@ -149,35 +194,37 @@ function analyzeComments(lines) {
                         }
                     }
                 }
-            }
-            if (!inBacktick && !inTripleDouble && !inTripleSingle) {
-                if (line[j] === '"' && !inSingle) {
-                    let escaped = false;
-                    let k = j - 1;
-                    while (k >= 0 && line[k] === '\\') {
-                        escaped = !escaped;
-                        k--;
+                if (!inBacktick) {
+                    if (line[j] === '"' && !inSingle) {
+                        let escaped = false;
+                        let k = j - 1;
+                        while (k >= 0 && line[k] === '\\') {
+                            escaped = !escaped;
+                            k--;
+                        }
+                        if (!escaped) {
+                            inDouble = !inDouble;
+                        }
                     }
-                    if (!escaped) {
-                        inDouble = !inDouble;
-                    }
-                }
-                else if (line[j] === "'" && !inDouble) {
-                    let escaped = false;
-                    let k = j - 1;
-                    while (k >= 0 && line[k] === '\\') {
-                        escaped = !escaped;
-                        k--;
-                    }
-                    if (!escaped) {
-                        inSingle = !inSingle;
+                    else if (line[j] === "'" && !inDouble) {
+                        let escaped = false;
+                        let k = j - 1;
+                        while (k >= 0 && line[k] === '\\') {
+                            escaped = !escaped;
+                            k--;
+                        }
+                        if (!escaped) {
+                            inSingle = !inSingle;
+                        }
                     }
                 }
             }
             j++;
         }
-        inSingle = false;
-        inDouble = false;
+        if (!isPython) {
+            inSingle = false;
+            inDouble = false;
+        }
         const isEntirelyInsideBlock = isInsideBlockStart && (inBlockJS || inBlockHTML || (commentStartIndex === -1));
         let isPureComment = false;
         if (isEntirelyInsideBlock) {
@@ -199,7 +246,7 @@ function analyzeComments(lines) {
     return analysis;
 }
 
-function spliceComments(data, comments, mode = 'default') {
+function spliceComments(data, comments, mode = 'default', ext = '') {
     const hasCRLF = data.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
     const originalLines = data.split(/\r?\n/);
@@ -210,7 +257,7 @@ function spliceComments(data, comments, mode = 'default') {
     let analysis = null;
 
     if (mode === 'clean') {
-        analysis = analyzeComments(originalLines);
+        analysis = analyzeComments(originalLines, ext);
         const finalDeletions = new Set();
         for (let i = 0; i < originalLines.length; i++) {
             const lineNum = i + 1;
@@ -258,7 +305,7 @@ function spliceComments(data, comments, mode = 'default') {
         }
     } else {
         for (const c of validComments) {
-            if (isLineInsideString(originalLines, c.line - 1)) {
+            if (isLineInsideString(originalLines, c.line - 1, ext)) {
                 console.warn(`[devsplain] Skipping comment insertion at line ${c.line} to avoid string literal corruption.`);
                 continue;
             }
@@ -481,12 +528,11 @@ Options:
                 let comments = [];
                 let commentedCode;
                 if (mode !== 'clean') {
-                    // Locally scrub existing comments first to prevent duplicate comment pile-up
-                    const cleanData = spliceComments(data, [], 'clean');
+                    const cleanData = spliceComments(data, [], 'clean', ext);
                     comments = await getComments(cleanData, filename, config, mode);
-                    commentedCode = spliceComments(cleanData, comments, mode);
+                    commentedCode = spliceComments(cleanData, comments, mode, ext);
                 } else {
-                    commentedCode = spliceComments(data, [], 'clean');
+                    commentedCode = spliceComments(data, [], 'clean', ext);
                 }
                 if (isDryRun) {
                     console.log(`\n --- DRY RUN PREVIEW: ${filename} ---`);

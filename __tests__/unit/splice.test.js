@@ -106,8 +106,8 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
         ];
 
         // Check if a line is inside a Python-style triple quote
-        expect(isLineInsideString(pythonCode, 2)).toBe(true);
-        expect(isLineInsideString(pythonCode, 4)).toBe(false);
+        expect(isLineInsideString(pythonCode, 2, '.py')).toBe(true);
+        expect(isLineInsideString(pythonCode, 4, '.py')).toBe(false);
     });
 
     /** Test for clean mode (deleting comment lines safely) */
