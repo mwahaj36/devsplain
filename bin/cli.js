@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 
 const { getComments } = require('../lib/llm.js');
 const { getConfig } = require('../lib/config.js');
