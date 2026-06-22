@@ -10,6 +10,7 @@ let rl;
 let askQuestion;
 
 /** Checks if the current Git repository is dirty */
+/** Checks if the current Git repository is dirty */
 function isGitDirty() {
     try {
         const gitDir = execSync('git rev-parse --is-inside-work-tree', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
@@ -22,6 +23,7 @@ function isGitDirty() {
     return false;
 }
 
+/** Checks if a line is inside a string literal */
 /** Checks if a line is inside a string literal */
 function isLineInsideString(lines, targetLineIndex) {
     let inBacktick = false;
@@ -433,6 +435,9 @@ Options:
     if (cliApiKey) config.apiKey = cliApiKey;
     if (cliBaseUrl) config.baseUrl = cliBaseUrl;
 
+    let successCount = 0;
+    let failCount = 0;
+
     async function processPath(targetPath) {
         const stats = fs.statSync(targetPath);
 
@@ -501,14 +506,27 @@ Options:
                     fs.renameSync(tempPath, targetPath);
                     console.log(` Successfully commented ${targetPath}`);
                 }
+                successCount++;
             } catch (err) {
                 console.error(` Error processing ${filename}: ${err.message}`);
+                failCount++;
             }
         }
     }
 
     await processPath(filepath);
-    console.log("\n All done!");
+
+    if (failCount > 0 && successCount === 0) {
+        console.error("\nFailed: No files were successfully commented.");
+        rl.close();
+        process.exit(1);
+    }
+
+    if (successCount > 0 && failCount > 0) {
+        console.log(`\n All done! (Successfully commented: ${successCount}, Failed: ${failCount})`);
+    } else {
+        console.log("\n All done!");
+    }
     rl.close();
 }
 
