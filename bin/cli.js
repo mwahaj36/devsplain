@@ -11,6 +11,7 @@ let askQuestion;
 
 /** Checks if the current Git repository is dirty */
 /** Checks if the current Git repository is dirty */
+/** Checks if the current Git repository is dirty */
 function isGitDirty() {
     try {
         const gitDir = execSync('git rev-parse --is-inside-work-tree', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
@@ -23,6 +24,7 @@ function isGitDirty() {
     return false;
 }
 
+/** Checks if a line is inside a string literal */
 /** Checks if a line is inside a string literal */
 /** Checks if a line is inside a string literal */
 function isLineInsideString(lines, targetLineIndex) {
