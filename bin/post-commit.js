@@ -74,7 +74,8 @@ try {
         console.log(`[devsplain] Automatically commenting file: ${file}`);
         try {
             // Invoke the CLI tool to generate comments for the changed file
-            execSync(`node bin/cli.js "${file}" --force${modeFlag}`, { stdio: 'inherit' });
+            const cliPath = path.join(__dirname, 'cli.js');
+            execSync(`node "${cliPath}" "${file}" --force${modeFlag}`, { stdio: 'inherit' });
             commentedAny = true;
         } catch (err) {
             console.warn(`[devsplain] Warning: Failed to comment ${file}: ${err.message}`);

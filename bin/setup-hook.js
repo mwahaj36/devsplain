@@ -56,12 +56,15 @@ npm test || exit 1
             fs.chmodSync(preCommitHookPath, 0o755);
         } catch (err) {}
 
+        // Resolve the absolute path to post-commit.js from the installed package location
+        const postCommitScript = path.join(__dirname, 'post-commit.js').replace(/\\/g, '/');
+
         // Write the post-commit script that triggers documentation generation
         const postCommitHookPath = path.join(hooksDir, 'post-commit');
         const postCommitContent = `#!/bin/sh
 # devsplain native post-commit hook
 echo "Auto-generating comments for files in the last commit..."
-node bin/post-commit.js${modeArgs} || exit 1
+node "${postCommitScript}"${modeArgs} || exit 1
 `;
         fs.writeFileSync(postCommitHookPath, postCommitContent);
         try {
