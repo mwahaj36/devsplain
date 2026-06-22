@@ -1,6 +1,6 @@
 {
   "name": "devsplain",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "An agent-agnostic CLI tool that automatically adds JSDoc and inline comments to your code using free LLMs.",
   "author": "mwahaj36",
   "license": "MIT",
