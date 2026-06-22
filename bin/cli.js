@@ -1,196 +1,522 @@
-#!/usr/bin/env node
 
-/**
- * Import required modules.
- * @module llm
- * @module config
- * @module fs
- * @module path
- * @module readline
- */
 const { getComments } = require('../lib/llm.js');
 const { getConfig } = require('../lib/config.js');
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+const { execSync } = require('child_process');
 
-/**
- * Asks a question and returns the answer as a promise.
- * @param {string} query - The question to be asked.
- * @returns {Promise<string>} The answer to the question.
- */
-const askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
+let rl;
+let askQuestion;
 
-/**
- * Get the filepath and arguments from the command line.
- * @type {string}
- */
-const filepath = process.argv[2];
-const args = process.argv.slice(3);
-let mode = 'default';
+/** Checks if the current Git repository is dirty */
+function isGitDirty() {
+    try {
+        const gitDir = execSync('git rev-parse --is-inside-work-tree', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+        if (gitDir === 'true') {
+            const status = execSync('git status --porcelain', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+            return status.length > 0;
+        }
+    } catch (e) {
+    }
+    return false;
+}
 
-/**
- * Determine the mode based on the command line arguments.
- * Supported modes are: 'light', 'full', and 'clean'.
- */
-if (args.includes('--light')) mode = 'light';
-if (args.includes('--full')) mode = 'full';
-if (args.includes('--clean')) mode = 'clean';
-const isDryRun = args.includes('--dry-run');
-
-/**
- * Check if a filepath was provided, if not display usage information.
- */
-if (!filepath) {
-    console.log("usage: devsplain <file-or-directory>");
-    process.exit(1);
-} 
-else if (!fs.existsSync(filepath)) {
-    console.log(`Error: The path '${filepath}' does not exist.`);
-    process.exit(1);
-} 
-else {
-    (async () => {
-        /**
-         * Get the configuration.
-         * @type {object}
-         */
-        const config = await getConfig();
-
-        /**
-         * Process a path, either a file or directory.
-         * @param {string} targetPath - The path to process.
-         * @returns {Promise<void>}
-         */
-        async function processPath(targetPath) {
-            /**
-             * Get the stats of the target path.
-             * @type {fs.Stats}
-             */
-            const stats = fs.statSync(targetPath);
-
-            /**
-             * If the target path is a directory, process its contents.
-             */
-            if (stats.isDirectory()) {
-                const folderName = path.basename(targetPath);
-                /**
-                 * List of ignored folders.
-                 * @type {string[]}
-                 */
-                const ignoredFolders = [
-                    'node_modules', '.git', 'dist', 'build', 'out', 
-                    '.next', '.nuxt', '.svelte-kit', 
-                    'venv', 'env', '.venv',          
-                    '.vscode', '.idea', 'coverage'   
-                ];
-
-                /**
-                 * Check if the folder should be ignored.
-                 */
-                if (ignoredFolders.includes(folderName)) {
-                    // Folder will be skipped
-                    return;
+/** Checks if a line is inside a string literal */
+function isLineInsideString(lines, targetLineIndex) {
+    let inBacktick = false;
+    let inTripleDouble = false;
+    let inTripleSingle = false;
+    for (let i = 0; i < targetLineIndex; i++) {
+        const line = lines[i];
+        let j = 0;
+        while (j < line.length) {
+            if (!inBacktick && !inTripleSingle) {
+                if (line.slice(j, j + 3) === '"""') {
+                    inTripleDouble = !inTripleDouble;
+                    j += 3;
+                    continue;
                 }
-
-                console.log(`\n Scanning directory: ${targetPath}`);
-                /**
-                 * Read the contents of the directory.
-                 * @type {string[]}
-                 */
-                const items = fs.readdirSync(targetPath);
-                
-                /**
-                 * Process each item in the directory.
-                 */
-                for (const item of items) {
-                    const fullPath = path.join(targetPath, item);
-                    await processPath(fullPath); 
+            }
+            if (!inBacktick && !inTripleDouble) {
+                if (line.slice(j, j + 3) === "'''") {
+                    inTripleSingle = !inTripleSingle;
+                    j += 3;
+                    continue;
                 }
-            } 
-            /**
-             * If the target path is a file, process it.
-             */
-            else if (stats.isFile()) {
-                /**
-                 * Get the file extension.
-                 * @type {string}
-                 */
-                const ext = path.extname(targetPath).toLowerCase();
-                /**
-                 * List of valid file extensions.
-                 * @type {string[]}
-                 */
-                const validExtensions = [
-                    '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss', '.vue', '.svelte',
-                    '.py', '.java', '.c', '.cpp', '.cs', '.go', '.rb', '.php', '.rs', 
-                    '.swift', '.kt', '.dart', '.sh'
-                ];
-
-                /**
-                 * Check if the file extension is valid.
-                 */
-                if (!validExtensions.includes(ext)) {
-                    // File type is not supported, skipping
-                    return;
+            }
+            if (!inTripleDouble && !inTripleSingle) {
+                if (line[j] === '`') {
+                    let escaped = false;
+                    let k = j - 1;
+                    while (k >= 0 && line[k] === '\\') {
+                        escaped = !escaped;
+                        k--;
+                    }
+                    if (!escaped) {
+                        inBacktick = !inBacktick;
+                    }
                 }
+            }
+            j++;
+        }
+    }
+    return inBacktick || inTripleDouble || inTripleSingle;
+}
 
-                const filename = path.basename(targetPath);
-                /**
-                 * Read the file contents.
-                 * @type {string}
-                 */
-                const data = fs.readFileSync(targetPath, 'utf-8');
-                
-                /**
-                 * Check if the file is empty.
-                 */
-                if (data.trim() === '') {
-                    console.log(` Skipping ${filename} (Empty File)`);
-                    return;
+
+
+function analyzeComments(lines) {
+    const analysis = [];
+    let inBacktick = false;
+    let inTripleDouble = false;
+    let inTripleSingle = false;
+    let inSingle = false;
+    let inDouble = false;
+    let inBlockJS = false;
+    let inBlockHTML = false;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        let commentStartIndex = -1;
+        let isInsideBlockStart = inBlockJS || inBlockHTML;
+        let j = 0;
+        while (j < line.length) {
+            if (inBlockJS) {
+                if (line.slice(j, j + 2) === '*/') {
+                    inBlockJS = false;
+                    j += 2;
+                    continue;
                 }
+                j++;
+                continue;
+            }
+            if (inBlockHTML) {
+                if (line.slice(j, j + 3) === '-->') {
+                    inBlockHTML = false;
+                    j += 3;
+                    continue;
+                }
+                j++;
+                continue;
+            }
+            if (!inSingle && !inDouble && !inBacktick && !inTripleSingle && !inTripleDouble) {
+                if (line.slice(j, j + 2) === '//' || line[j] === '#') {
+                    commentStartIndex = j;
+                    break;
+                }
+                if (line.slice(j, j + 2) === '--') {
+                    commentStartIndex = j;
+                    break;
+                }
+                if (line.slice(j, j + 2) === '/*') {
+                    commentStartIndex = j;
+                    inBlockJS = true;
+                    j += 2;
+                    continue;
+                }
+                if (line.slice(j, j + 4) === '<!--') {
+                    commentStartIndex = j;
+                    inBlockHTML = true;
+                    j += 4;
+                    continue;
+                }
+            }
+            if (!inSingle && !inDouble) {
+                if (!inBacktick && !inTripleSingle) {
+                    if (line.slice(j, j + 3) === '"""') {
+                        inTripleDouble = !inTripleDouble;
+                        j += 3;
+                        continue;
+                    }
+                }
+                if (!inBacktick && !inTripleDouble) {
+                    if (line.slice(j, j + 3) === "'''") {
+                        inTripleSingle = !inTripleSingle;
+                        j += 3;
+                        continue;
+                    }
+                }
+                if (!inTripleDouble && !inTripleSingle) {
+                    if (line[j] === '`') {
+                        let escaped = false;
+                        let k = j - 1;
+                        while (k >= 0 && line[k] === '\\') {
+                            escaped = !escaped;
+                            k--;
+                        }
+                        if (!escaped) {
+                            inBacktick = !inBacktick;
+                        }
+                    }
+                }
+            }
+            if (!inBacktick && !inTripleDouble && !inTripleSingle) {
+                if (line[j] === '"' && !inSingle) {
+                    let escaped = false;
+                    let k = j - 1;
+                    while (k >= 0 && line[k] === '\\') {
+                        escaped = !escaped;
+                        k--;
+                    }
+                    if (!escaped) {
+                        inDouble = !inDouble;
+                    }
+                }
+                else if (line[j] === "'" && !inDouble) {
+                    let escaped = false;
+                    let k = j - 1;
+                    while (k >= 0 && line[k] === '\\') {
+                        escaped = !escaped;
+                        k--;
+                    }
+                    if (!escaped) {
+                        inSingle = !inSingle;
+                    }
+                }
+            }
+            j++;
+        }
+        inSingle = false;
+        inDouble = false;
+        const isEntirelyInsideBlock = isInsideBlockStart && (inBlockJS || inBlockHTML || (commentStartIndex === -1));
+        let isPureComment = false;
+        if (isEntirelyInsideBlock) {
+            isPureComment = true;
+        } else if (commentStartIndex !== -1) {
+            const beforeComment = line.slice(0, commentStartIndex).trim();
+            if (beforeComment === '') {
+                isPureComment = true;
+            }
+        } else if (line.trim() === '') {
+            isPureComment = true;
+        }
+        analysis.push({
+            isPureComment,
+            commentStartIndex,
+            isInsideBlock: isEntirelyInsideBlock || isInsideBlockStart
+        });
+    }
+    return analysis;
+}
 
-                console.log(` Analyzing ${filename} in ${mode} mode...`);
-                /**
-                 * Get the commented code.
-                 * @type {string}
-                 */
-                const commentedCode = await getComments(data, filename, config, mode);
-                
-                /**
-                 * If in dry run mode, display a preview of the commented code.
-                 */
+function spliceComments(data, comments, mode = 'default') {
+    const hasCRLF = data.includes('\r\n');
+    const lineEnding = hasCRLF ? '\r\n' : '\n';
+    const originalLines = data.split(/\r?\n/);
+    const sortedComments = [...comments].sort((a, b) => b.line - a.line);
+    const validComments = sortedComments.filter(c => c.line >= 1 && c.line <= originalLines.length + 1);
+
+    const annotated = originalLines.map((text, index) => ({ text, originalIndex: index }));
+    let analysis = null;
+
+    if (mode === 'clean') {
+        analysis = analyzeComments(originalLines);
+        const finalDeletions = new Set();
+        for (let i = 0; i < originalLines.length; i++) {
+            const lineNum = i + 1;
+            if (analysis[i].isPureComment) {
+                finalDeletions.add(lineNum);
+            } else if (analysis[i].commentStartIndex !== -1) {
+                annotated[i].text = originalLines[i].slice(0, analysis[i].commentStartIndex).trimEnd();
+            }
+        }
+
+        for (const c of validComments) {
+            const lineIdx = c.line - 1;
+            if (lineIdx >= 0 && lineIdx < originalLines.length) {
+                finalDeletions.add(c.line);
+            }
+        }
+
+        const linesToDelete = Array.from(finalDeletions).sort((a, b) => b - a);
+
+        for (const lineNum of linesToDelete) {
+            const targetLine = originalLines[lineNum - 1];
+            if (!targetLine) continue;
+            const trimmedLine = targetLine.trim();
+
+            const lineAnalysis = analysis[lineNum - 1];
+            const isCommentLine = 
+                lineAnalysis.isInsideBlock ||
+                lineAnalysis.isPureComment ||
+                trimmedLine.startsWith('//') || 
+                trimmedLine.startsWith('/*') || 
+                trimmedLine.startsWith('*') || 
+                trimmedLine.startsWith('#') || 
+                trimmedLine.startsWith('<!--') || 
+                trimmedLine.startsWith('-->') || 
+                trimmedLine.startsWith('--') ||
+                trimmedLine.endsWith('*/') ||
+                trimmedLine === '';
+
+            if (!isCommentLine) {
+                console.warn(`[devsplain] Safety Block: Refused to delete non-comment line ${lineNum}: "${trimmedLine}"`);
+                continue;
+            }
+
+            annotated.splice(lineNum - 1, 1);
+        }
+    } else {
+        for (const c of validComments) {
+            if (isLineInsideString(originalLines, c.line - 1)) {
+                console.warn(`[devsplain] Skipping comment insertion at line ${c.line} to avoid string literal corruption.`);
+                continue;
+            }
+
+            const targetLine = originalLines[c.line - 1] || '';
+            const indentMatch = targetLine.match(/^([ \t]*)/);
+            const indentation = indentMatch ? indentMatch[1] : '';
+
+            const commentLines = c.comment.split(/\r?\n/).map(line => {
+                const trimmed = line.trimStart();
+                if (!trimmed) return '';
+                if (trimmed.startsWith('*') && !trimmed.startsWith('*/') && !trimmed.startsWith('/*')) {
+                    return indentation + ' ' + trimmed;
+                }
+                return indentation + trimmed;
+            });
+
+            const commentObjects = commentLines.map(line => ({ text: line, originalIndex: -1 }));
+            annotated.splice(c.line - 1, 0, ...commentObjects);
+        }
+    }
+
+    const filtered = annotated.filter(line => line.originalIndex !== -1);
+    const filteredText = filtered.map(line => line.text);
+    const filteredIndices = filtered.map(line => line.originalIndex);
+
+    const textEqual = filteredText.every((text, idx) => {
+        const origIdx = filteredIndices[idx];
+        const originalLine = originalLines[origIdx];
+        if (text === originalLine) {
+            return true;
+        }
+        if (mode === 'clean' && analysis) {
+            const lineAnalysis = analysis[origIdx];
+            if (lineAnalysis && lineAnalysis.commentStartIndex !== -1 && !lineAnalysis.isPureComment) {
+                const expectedStripped = originalLine.slice(0, lineAnalysis.commentStartIndex).trimEnd();
+                if (text === expectedStripped) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    });
+
+    let indicesSequential = true;
+    for (let i = 1; i < filteredIndices.length; i++) {
+        if (filteredIndices[i] <= filteredIndices[i - 1]) {
+            indicesSequential = false;
+            break;
+        }
+    }
+
+    if (!textEqual || !indicesSequential) {
+        console.error("\nSafety Assertion Failed: Spliced code does not match original code minus comments!");
+        process.exit(1);
+    }
+
+    return annotated.map(line => line.text).join(lineEnding);
+}
+
+async function runCLI() {
+    rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
+
+    const args = process.argv.slice(2);
+
+    if (args.includes('--help') || args.includes('-h')) {
+        console.log(`
+devsplain - Universal Polyglot AI Code Commenter
+
+Usage:
+  devsplain <file-or-directory> [options]
+
+Options:
+  --light             Add ONLY JSDoc/block comments above functions (minimalist)
+  --full              Add detailed JSDoc/block comments and inline comments
+  --dry-run           Preview comments without writing to file
+  --force             Bypass the dirty Git tree safety check
+  --provider <name>   Override AI provider (gemini, groq, openai, custom)
+  --model <name>      Override AI model name
+  --api-key <key>     Override API key for the provider
+  --base-url <url>    Override base URL for custom APIs
+  --config            Force run the configuration setup wizard
+  --setup-hook        Install Git pre-commit and post-commit hooks in repository
+  --help, -h          Show this help message
+  --version, -v       Show version information
+`);
+        rl.close();
+        process.exit(0);
+    }
+
+    if (args.includes('--version') || args.includes('-v')) {
+        const pkg = require('../package.json');
+        console.log(`devsplain v${pkg.version}`);
+        rl.close();
+        process.exit(0);
+    }
+
+    if (args.includes('--config')) {
+        rl.close();
+        await getConfig(true);
+        console.log("Success: Configuration updated successfully!");
+        process.exit(0);
+    }
+
+    if (args.includes('--setup-hook')) {
+        rl.close();
+        require('./setup-hook.js');
+        return;
+    }
+
+    // Helper to get value of custom flags
+    const getArgValue = (flag) => {
+        const index = args.indexOf(flag);
+        if (index !== -1 && index + 1 < args.length) {
+            return args[index + 1];
+        }
+        return null;
+    };
+
+    // Find filepath, skipping flag keys and their values
+    let filepath = '.';
+    const flagKeys = ['--provider', '--model', '--api-key', '--base-url'];
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        if (arg.startsWith('--')) {
+            if (flagKeys.includes(arg)) {
+                i++; // Skip the next argument as it is a value
+            }
+        } else {
+            filepath = arg;
+            break;
+        }
+    }
+
+    if (!fs.existsSync(filepath)) {
+        console.log(`Error: The path '${filepath}' does not exist.`);
+        rl.close();
+        process.exit(1);
+    }
+
+    let mode = 'default';
+    if (args.includes('--light')) mode = 'light';
+    if (args.includes('--full')) mode = 'full';
+    if (args.includes('--clean')) mode = 'clean';
+    const isDryRun = args.includes('--dry-run');
+    const isForce = args.includes('--force');
+
+    if (process.env.NODE_ENV !== 'test' && isGitDirty() && !isForce) {
+        console.error("Error: Git working tree is dirty. Please commit or stash your changes, or use --force to bypass this check.");
+        rl.close();
+        process.exit(1);
+    }
+
+    const config = await getConfig();
+
+    const cliProvider = getArgValue('--provider');
+    const cliModel = getArgValue('--model');
+    const cliApiKey = getArgValue('--api-key');
+    const cliBaseUrl = getArgValue('--base-url');
+
+    if (cliProvider) {
+        config.provider = cliProvider;
+        if (!cliModel) {
+            config.model = cliProvider === 'gemini' ? 'gemini-2.0-flash' : 'llama-3.3-70b-versatile';
+        }
+        if (!cliBaseUrl) {
+            config.baseUrl = cliProvider === 'gemini' ? null : (cliProvider === 'groq' ? 'https://api.groq.com/openai' : (cliProvider === 'openai' ? 'https://api.openai.com' : ''));
+        }
+    }
+    if (cliModel) config.model = cliModel;
+    if (cliApiKey) config.apiKey = cliApiKey;
+    if (cliBaseUrl) config.baseUrl = cliBaseUrl;
+
+    async function processPath(targetPath) {
+        const stats = fs.statSync(targetPath);
+
+        if (stats.isDirectory()) {
+            const folderName = path.basename(targetPath);
+            const ignoredFolders = [
+                'node_modules', '.git', 'dist', 'build', 'out', 
+                '.next', '.nuxt', '.svelte-kit', 
+                'venv', 'env', '.venv',          
+                '.vscode', '.idea', 'coverage'   
+            ];
+
+            if (ignoredFolders.includes(folderName)) {
+                return;
+            }
+
+            console.log(`\n Scanning directory: ${targetPath}`);
+            const items = fs.readdirSync(targetPath);
+            for (const item of items) {
+                const fullPath = path.join(targetPath, item);
+                await processPath(fullPath); 
+            }
+        } 
+        else if (stats.isFile()) {
+            const ext = path.extname(targetPath).toLowerCase();
+            const validExtensions = [
+                '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss', '.vue', '.svelte',
+                '.py', '.java', '.c', '.cpp', '.cs', '.go', '.rb', '.php', '.rs', 
+                '.swift', '.kt', '.dart', '.sh'
+            ];
+
+            if (!validExtensions.includes(ext)) {
+                return;
+            }
+
+            const filename = path.basename(targetPath);
+            const data = fs.readFileSync(targetPath, 'utf-8');
+            if (data.trim() === '') {
+                console.log(` Skipping ${filename} (Empty File)`);
+                return;
+            }
+
+            console.log(` Analyzing ${filename} in ${mode} mode...`);
+            try {
+                let comments = [];
+                if (mode !== 'clean') {
+                    comments = await getComments(data, filename, config, mode);
+                }
+                const commentedCode = spliceComments(data, comments, mode);
                 if (isDryRun) {
                     console.log(`\n --- DRY RUN PREVIEW: ${filename} ---`);
                     console.log(commentedCode);
                     console.log(`---------------------------------------\n`);
-                    
-                    /**
-                     * Ask the user if they want to save the commented code.
-                     */
-                    const answer = await askQuestion("Type 'write' to save to file, or press any key to discard ");
-                    
-                    if (answer.toLowerCase() == 'write') {
-                        fs.writeFileSync(targetPath, commentedCode);
+                    const answer = await askQuestion("Type 'write' to save to file, or press any key to discard: ");
+                    if (answer.toLowerCase() === 'write') {
+                        const tempPath = targetPath + '.tmp';
+                        fs.writeFileSync(tempPath, commentedCode, 'utf8');
+                        fs.renameSync(tempPath, targetPath);
                         console.log(` Successfully saved ${targetPath}`);
                     } else {
                         console.log(` Skipped ${targetPath}`);
                     }
                 } else {
-                    /**
-                     * Write the commented code to the file.
-                     */
-                    fs.writeFileSync(targetPath, commentedCode);
+                    const tempPath = targetPath + '.tmp';
+                    fs.writeFileSync(tempPath, commentedCode, 'utf8');
+                    fs.renameSync(tempPath, targetPath);
                     console.log(` Successfully commented ${targetPath}`);
                 }
+            } catch (err) {
+                console.error(` Error processing ${filename}: ${err.message}`);
             }
         }
+    }
 
-        /**
-         * Start processing the provided filepath.
-         */
-        await processPath(filepath);
-        console.log("\n All done!");
-    })();
+    await processPath(filepath);
+    console.log("\n All done!");
+    rl.close();
+}
+
+if (require.main === module) {
+    runCLI().catch(err => {
+        console.error(err);
+        process.exit(1);
+    });
+} else {
+    module.exports = { spliceComments, isLineInsideString };
 }

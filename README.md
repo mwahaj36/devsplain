@@ -1,80 +1,143 @@
 # devsplain
 
-![devsplain demo](sample.gif)
-
-An agent-agnostic CLI tool that automatically adds JSDoc and inline comments to your code using free LLMs.
-
-Tired of writing documentation? Let AI do the explaining for you. `devsplain` reads your code and intelligently injects standard JSDoc headers and inline comments.
-
-## Installation & Usage
-
-You can run `devsplain` instantly without installing anything using `npx`:
-
-```bash
-npx devsplain src/utils.js
-```
-
-Alternatively, if you use it often, you can install it globally on your machine:
-
-```bash
-npm install -g devsplain
-devsplain src/utils.js
-```
-
-### Directory Support (Bulk Processing)
-
-You don't have to go file-by-file! Point `devsplain` at an entire directory, and it will recursively crawl through your codebase and comment everything.
-
-```bash
-devsplain src/
-```
-
-_Note: `devsplain` is smart. It automatically ignores junk folders like `node_modules`, `.git`, `dist`, `venv`, and `.next` to save you time and API tokens._
-
-### Modes
-
-You can control exactly how aggressive the AI is with its comments using flags:
-
-- `--light`: Only adds JSDoc blocks above functions. Keeps the inside of your functions completely untouched.
-- `--full`: Highly aggressive. Explains complex logic line-by-line inside your functions.
-- `--clean`: A code scrubber. Removes ALL existing comments from the code, leaving it completely bare.
-- `--dry-run`: Interactive preview. Prints the AI's output to the terminal and waits for your approval before saving to the file. Extremely safe for testing!
-- **(Default)**: A balanced mix of JSDoc headers and sparse inline comments for complex logic.
-
-**Usage Examples:**
-
-```bash
-devsplain src/utils.js --light
-devsplain src/ --full
-devsplain legacy_code.js --clean
-devsplain lib/ --dry-run
-```
-
-### Supported Languages
-
-Because `devsplain` uses LLMs, it natively understands almost every language syntax. It currently processes the following extensions:
-
-- **Web**: `.js`, `.jsx`, `.ts`, `.tsx`, `.html`, `.css`, `.scss`, `.vue`, `.svelte`
-- **Backend**: `.py`, `.java`, `.c`, `.cpp`, `.cs`, `.go`, `.rb`, `.php`, `.rs`
-- **Mobile/Scripts**: `.swift`, `.kt`, `.dart`, `.sh`
-
-## Agent Agnostic (Bring Your Own LLM)
-
-`devsplain` doesn't lock you into one ecosystem. On your first run, an interactive Setup Wizard will ask you which engine you want to use:
-
-1. **Groq** (Recommended) - Instant, free Llama-3 endpoints.
-2. **Gemini** - Google's free tier endpoints.
-3. **OpenAI** - Standard paid ChatGPT models.
-4. **Custom** - Point it at ANY OpenAI-compatible endpoint (e.g., local models via Ollama or LMStudio).
-
-_(Your configuration is safely stored in `~/.devsplainrc` on your machine)._
+An industrial-grade, agent-agnostic CLI tool that automatically adds JSDoc and inline comments to your code using state-of-the-art LLMs, while guaranteeing code integrity with deterministic safety constraints.
 
 ---
 
-### Disclaimer
+## Key Features
 
-**Use at your own risk.** `devsplain` uses AI to physically overwrite your source files. While the prompts are heavily engineered to prevent code refactoring or corruption, AI is non-deterministic. **Always ensure your code is committed to Git (Version Control) before running `devsplain` on an entire directory!** We are not responsible for corrupted or lost code.
+- **Mathematical Safety Invariants**: Uses an index-preserving splicing engine. Your functional code is mathematically verified to remain identical before and after commenting.
+- **Multi-Language support**: Natively parses JavaScript, JSX, TypeScript, TSX, HTML, CSS, SCSS, Vue, Svelte, Python, Java, C, C++, C#, Go, Ruby, PHP, Rust, Swift, Kotlin, Dart, and Shell scripts.
+- **Local Deterministic Scrubber**: The `--clean` flag strips comments locally using a deterministic lexical state machine—no LLM calls, API keys, or internet required.
+- **Git Hook Automation**: Supports an automated two-commit Git hook workflow (`pre-commit` for quality, `post-commit` for auto-generated documentation commits) that prevents recursive commit loops.
+- **Bring Your Own LLM**: Native setup wizard for Groq, Gemini, OpenAI, or any OpenAI-compatible API endpoint (like Ollama or LMStudio).
+- **Exponential Backoff**: Resilient AI request handler that automatically retries rate-limited requests with exponential backoff.
+- **Headless & Override Control**: Configure via environment variables or override global config settings dynamically on the fly with command-line flags.
+
+---
+
+## Architecture & Safety Guarantees
+
+Many AI code formatters rewrite your code entirely, exposing you to logic regressions and subtle syntax corruption. `devsplain` is designed from the ground up to prevent this.
+
+### The Splicing Engine
+1. The CLI prepends line numbers to your source code and sends it to the LLM.
+2. The LLM returns a structured JSON payload containing target line numbers and comment contents:
+   ```json
+   [
+     { "line": 12, "comment": "// Calculates the exponential backoff delay" }
+   ]
+   ```
+3. The splicing engine inserts comments directly into the source array at the requested indices.
+4. **Validation Check**: Before writing to disk, `devsplain` filters out the added comments and compares the remaining code lines against your original source. If a single line of executable code has changed, shifted, or been omitted, the process aborts immediately, safeguarding your code from corruption.
+
+### String Literal Guardrails
+The engine tracks lexical state across template strings, single quotes, double quotes, and multi-line docstrings (such as Python triple-quotes). Comment insertion is blocked if the target line resides within a string literal, preventing broken syntax.
+
+---
+
+## Installation
+
+Install globally using `npm`:
+```bash
+npm install -g devsplain
+```
+
+Or run it on demand without installation:
+```bash
+npx devsplain <file-or-directory> [options]
+```
+
+---
+
+## Setup & Configuration
+
+On its first run, `devsplain` launches an interactive configuration wizard to configure your preferred LLM provider.
+
+To force re-run the configuration wizard at any time, execute:
+```bash
+devsplain --config
+```
+
+Your settings are stored securely in `~/.devsplainrc` (configured with `chmod 600` on POSIX systems to restrict read access).
+
+---
+
+## CLI Usage & Options
+
+```bash
+devsplain <file-or-directory> [options]
+```
+
+### Options
+
+| Flag | Description |
+|---|---|
+| *(Default)* | Balanced commenting. Generates a mix of JSDoc block comments above functions and sparse inline comments for complex logical branches. |
+| `--light` | Minimalist commenting. Adds JSDoc/block comments above functions, leaving function bodies untouched. |
+| `--full` | Aggressive commenting. Explains complex logic blocks line-by-line inside functions. |
+| `--dry-run` | Preview comments in the terminal without writing to files. Prompts for manual save confirmation. |
+| `--force` | Bypasses the safety block check that prevents running `devsplain` on a dirty Git working tree. |
+| `--clean` | Scrubber mode. Deterministically removes all comments and docstrings from source files. |
+| `--provider <name>`| Temporary one-off override for the AI provider (`gemini`, `groq`, `openai`, `custom`) for this command run only (does not modify the saved config file). |
+| `--model <name>` | Temporary one-off override for the model name for this command run only. |
+| `--api-key <key>` | Temporary one-off override for the API key for this command run only. |
+| `--base-url <url>` | Temporary one-off override for the API base URL for this command run only. |
+| `--config` | Relaunches the configuration setup wizard. |
+| `--setup-hook` | Installs Git pre-commit and post-commit hooks in the repository. |
+| `--help, -h` | Displays the help menu. |
+| `--version, -v` | Displays version information. |
+
+### Usage Examples
+
+```bash
+# Light commenting on a single file
+devsplain src/index.js --light
+
+# Deep logic commenting on a folder (skips node_modules, .git, etc.)
+devsplain src/ --full
+
+# Clean and scrub comments from your codebase locally without AI calls
+devsplain lib/ --clean
+
+# Headless run using overriding credentials
+devsplain src/utils.ts --provider gemini --model gemini-2.0-flash --api-key YOUR_KEY
+```
+
+---
+
+## Environment Variables
+
+For headless environments, CI pipelines, or automated scripts, `devsplain` respects the following environment variables:
+
+- `DEVSPLAIN_PROVIDER`: Selects the AI provider (`groq`, `gemini`, `openai`, `custom`).
+- `DEVSPLAIN_API_KEY`: The API key to use for the selected provider.
+- `DEVSPLAIN_MODEL`: Specify a custom model.
+- `DEVSPLAIN_BASE_URL`: Custom base endpoint for local/private API runs.
+
+---
+
+## Automated Git Hooks
+
+Ensure all code changes in your repository are automatically documented by configuring Git hooks.
+
+### Installation
+Run the hook setup command inside your Git repository:
+```bash
+devsplain --setup-hook
+```
+
+### Pipeline Architecture
+1. **Pre-commit Hook**: Runs your project test suite (`npm test`). If the tests fail, the commit is blocked.
+2. **Post-commit Hook**: 
+   - Detects all modified files in the commit.
+   - Runs `devsplain` to generate comments on the modified files.
+   - Automatically stages and commits the comments in a secondary commit: `docs: auto-generated comments by devsplain`.
+   - The secondary commit runs with `--no-verify` to prevent recursive hook invocation.
+3. **Resilience**: If the API key is missing or the network is offline during the post-commit process, the script logs a warning to stderr and exits with status code `0`. Your initial commit remains safe and unblocked.
+
+---
 
 ## License
 
-MIT
+This project is licensed under the MIT License.

@@ -1,0 +1,60 @@
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+try {
+    // 1. Get files changed in the most recent commit (HEAD)
+    const changedFilesStr = execSync('git diff-tree --no-commit-id --name-only -r HEAD', { encoding: 'utf8' }).trim();
+    if (!changedFilesStr) {
+        process.exit(0);
+    }
+    const changedFiles = changedFilesStr.split(/\r?\n/);
+
+    const validExtensions = [
+        '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss', '.vue', '.svelte',
+        '.py', '.java', '.c', '.cpp', '.cs', '.go', '.rb', '.php', '.rs',
+        '.swift', '.kt', '.dart', '.sh'
+    ];
+
+    const filesToComment = changedFiles.filter(file => {
+        const ext = path.extname(file).toLowerCase();
+        return validExtensions.includes(ext) && fs.existsSync(file);
+    });
+
+    if (filesToComment.length === 0) {
+        process.exit(0);
+    }
+
+    console.log(`[devsplain] Found ${filesToComment.length} file(s) in the last commit to auto-comment.`);
+
+    const args = process.argv.slice(2);
+    let modeFlag = '';
+    if (args.includes('--light')) modeFlag = ' --light';
+    if (args.includes('--full')) modeFlag = ' --full';
+
+    let commentedAny = false;
+
+    for (const file of filesToComment) {
+        console.log(`[devsplain] Automatically commenting file: ${file}`);
+        try {
+            // Run devsplain on the file (using --force to bypass any git dirty checks)
+            execSync(`node bin/cli.js "${file}" --force${modeFlag}`, { stdio: 'inherit' });
+            commentedAny = true;
+        } catch (err) {
+            console.warn(`[devsplain] Warning: Failed to comment ${file}: ${err.message}`);
+        }
+    }
+
+    if (commentedAny) {
+        // Check if there are modified changes to commit
+        const status = execSync('git diff --name-only', { encoding: 'utf8' }).trim();
+        if (status.length > 0) {
+            console.log('[devsplain] Staging and committing auto-generated comments...');
+            // Create a second commit for the comments, bypass hooks with --no-verify to prevent infinite recursion
+            execSync('git commit -am "docs: auto-generated comments by devsplain" --no-verify', { stdio: 'inherit' });
+            console.log('[devsplain] Comments committed successfully! Rollback via: git reset --hard HEAD~1');
+        }
+    }
+} catch (e) {
+    console.warn(`[devsplain] Warning: post-commit hook script failed: ${e.message}`);
+}
