@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 
 const { getComments } = require('../lib/llm.js');
 const { getConfig } = require('../lib/config.js');
@@ -23,7 +22,7 @@ function isGitDirty() {
     return false;
 }
 
-/** Determines if a specific line index falls within a multi-line string or block */
+/** Determines if a specific line index falls within a string literal */
 function isLineInsideString(lines, targetLineIndex, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     let inBacktick = false;
@@ -32,6 +31,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
     let inSingle = false;
     let inDouble = false;
 
+    // Iterate through lines prior to the target to track string/block state
     for (let i = 0; i < targetLineIndex; i++) {
         const line = lines[i];
         let j = 0;
@@ -52,6 +52,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                     }
                 }
             } else {
+                // Check for unescaped backtick (JS template strings) or quotes
                 if (!inSingle && !inDouble && line[j] === '`') {
                     let escaped = false;
                     let k = j - 1;
@@ -97,7 +98,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
     return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble;
 }
 
-/** Analyzes code to determine which lines are purely comments */
+/** Performs a lexical analysis to categorize code lines and comment blocks */
 function analyzeComments(lines, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
@@ -109,6 +110,7 @@ function analyzeComments(lines, ext = '') {
     let inDouble = false;
     let inBlockJS = false;
     let inBlockHTML = false;
+    // Iterate through each line character by character to detect comment boundaries
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         let commentStartIndex = -1;
@@ -248,19 +250,19 @@ function analyzeComments(lines, ext = '') {
     return analysis;
 }
 
-/** Splices AI-generated comments into source code or cleans existing ones */
+/** Splices generated comments into the source data or removes existing ones */
 function spliceComments(data, comments, mode = 'default', ext = '') {
+    // Determine platform-specific line endings
     const hasCRLF = data.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
     const originalLines = data.split(/\r?\n/);
     const sortedComments = [...comments].sort((a, b) => b.line - a.line);
     const validComments = sortedComments.filter(c => c.line >= 1 && c.line <= originalLines.length + 1);
 
-    // Map lines to objects to track original positioning after splicing
     const annotated = originalLines.map((text, index) => ({ text, originalIndex: index }));
     let analysis = null;
 
-    // Logic for removing existing comments
+    // 'clean' mode removes all existing comments/documentation
     if (mode === 'clean') {
         analysis = analyzeComments(originalLines, ext);
         const finalDeletions = new Set();
@@ -282,7 +284,6 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
 
         const linesToDelete = Array.from(finalDeletions).sort((a, b) => b - a);
 
-        // Process deletions in reverse to maintain line integrity
         for (const lineNum of linesToDelete) {
             const targetLine = originalLines[lineNum - 1];
             if (!targetLine) continue;
@@ -310,6 +311,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
             annotated.splice(lineNum - 1, 1);
         }
     } else {
+        // 'default'/'light'/'full' mode: Inject AI-generated comments
         for (const c of validComments) {
             if (isLineInsideString(originalLines, c.line - 1, ext)) {
                 console.warn(`[devsplain] Skipping comment insertion at line ${c.line} to avoid string literal corruption.`);
@@ -317,7 +319,6 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
             }
 
             const targetLine = originalLines[c.line - 1] || '';
-            // Determine indentation level for new comment blocks
             const indentMatch = targetLine.match(/^([ \t]*)/);
             const indentation = indentMatch ? indentMatch[1] : '';
 
@@ -335,7 +336,6 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
         }
     }
 
-    // Verify that the result matches expected output before committing to disk
     const filtered = annotated.filter(line => line.originalIndex !== -1);
     const filteredText = filtered.map(line => line.text);
     const filteredIndices = filtered.map(line => line.originalIndex);
@@ -374,7 +374,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     return annotated.map(line => line.text).join(lineEnding);
 }
 
-/** Main CLI execution loop */
+/** Main entry point for the CLI tool logic */
 async function runCLI() {
     rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
@@ -491,7 +491,7 @@ Options:
     let successCount = 0;
     let failCount = 0;
 
-    /** Recursively process files or directories */
+    /** Recursively traverses the file system to identify and process source files */
     async function processPath(targetPath) {
         const stats = fs.statSync(targetPath);
 
@@ -535,8 +535,8 @@ Options:
             }
 
             console.log(` Analyzing ${filename} in ${mode} mode...`);
-            // Perform comment generation if not in 'clean' mode
             try {
+                // Logic to either clean existing comments or replace/insert new ones
                 let comments = [];
                 let commentedCode;
                 if (mode !== 'clean') {
@@ -552,7 +552,7 @@ Options:
                     console.log(`---------------------------------------\n`);
                     const answer = await askQuestion("Type 'write' to save to file, or press any key to discard: ");
                     if (answer.toLowerCase() === 'write') {
-                        // Atomic write: write to temp file then rename
+                        // Use temporary file for atomic write operations
                         const tempPath = targetPath + '.tmp';
                         fs.writeFileSync(tempPath, commentedCode, 'utf8');
                         fs.renameSync(tempPath, targetPath);
@@ -590,7 +590,6 @@ Options:
     rl.close();
 }
 
-// Execute main if run directly, otherwise export utility functions
 if (require.main === module) {
     runCLI().catch(err => {
         console.error(err);
