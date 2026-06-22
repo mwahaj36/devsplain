@@ -9,9 +9,7 @@ const { execSync } = require('child_process');
 let rl;
 let askQuestion;
 
-/** Checks if the current Git repository is dirty */
-/** Checks if the current Git repository is dirty */
-/** Checks if the current Git repository is dirty */
+/** Checks if the current Git repository has uncommitted changes */
 function isGitDirty() {
     try {
         const gitDir = execSync('git rev-parse --is-inside-work-tree', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
@@ -24,9 +22,7 @@ function isGitDirty() {
     return false;
 }
 
-/** Checks if a line is inside a string literal */
-/** Checks if a line is inside a string literal */
-/** Checks if a line is inside a string literal */
+/** Checks if a line of code is inside a string literal */
 function isLineInsideString(lines, targetLineIndex) {
     let inBacktick = false;
     let inTripleDouble = false;
@@ -55,7 +51,7 @@ function isLineInsideString(lines, targetLineIndex) {
                     let k = j - 1;
                     while (k >= 0 && line[k] === '\\') {
                         escaped = !escaped;
-                        k--;
+                        k
                     }
                     if (!escaped) {
                         inBacktick = !inBacktick;
@@ -374,7 +370,6 @@ Options:
         return;
     }
 
-    // Helper to get value of custom flags
     const getArgValue = (flag) => {
         const index = args.indexOf(flag);
         if (index !== -1 && index + 1 < args.length) {
@@ -383,14 +378,13 @@ Options:
         return null;
     };
 
-    // Find filepath, skipping flag keys and their values
     let filepath = '.';
     const flagKeys = ['--provider', '--model', '--api-key', '--base-url'];
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
         if (arg.startsWith('--')) {
             if (flagKeys.includes(arg)) {
-                i++; // Skip the next argument as it is a value
+                i++;
             }
         } else {
             filepath = arg;
@@ -485,10 +479,15 @@ Options:
             console.log(` Analyzing ${filename} in ${mode} mode...`);
             try {
                 let comments = [];
+                let commentedCode;
                 if (mode !== 'clean') {
-                    comments = await getComments(data, filename, config, mode);
+                    // Locally scrub existing comments first to prevent duplicate comment pile-up
+                    const cleanData = spliceComments(data, [], 'clean');
+                    comments = await getComments(cleanData, filename, config, mode);
+                    commentedCode = spliceComments(cleanData, comments, mode);
+                } else {
+                    commentedCode = spliceComments(data, [], 'clean');
                 }
-                const commentedCode = spliceComments(data, comments, mode);
                 if (isDryRun) {
                     console.log(`\n --- DRY RUN PREVIEW: ${filename} ---`);
                     console.log(commentedCode);
