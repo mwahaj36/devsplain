@@ -23,7 +23,7 @@ function isGitDirty() {
     return false;
 }
 
-/** Determines if a specific line index falls within a string literal */
+/** Determines if a line is within a string literal in the source code */
 function isLineInsideString(lines, targetLineIndex, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     let inBacktick = false;
@@ -32,7 +32,6 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
     let inSingle = false;
     let inDouble = false;
 
-    // Iterate through lines prior to the target to track string/block state
     for (let i = 0; i < targetLineIndex; i++) {
         const line = lines[i];
         let j = 0;
@@ -53,7 +52,6 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                     }
                 }
             } else {
-                // Check for unescaped backtick (JS template strings) or quotes
                 if (!inSingle && !inDouble && line[j] === '`') {
                     let escaped = false;
                     let k = j - 1;
@@ -99,7 +97,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
     return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble;
 }
 
-/** Performs a lexical analysis to categorize code lines and comment blocks */
+/** Analyzes source code to identify comments and code blocks */
 function analyzeComments(lines, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
@@ -111,7 +109,6 @@ function analyzeComments(lines, ext = '') {
     let inDouble = false;
     let inBlockJS = false;
     let inBlockHTML = false;
-    // Iterate through each line character by character to detect comment boundaries
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         let commentStartIndex = -1;
@@ -251,9 +248,8 @@ function analyzeComments(lines, ext = '') {
     return analysis;
 }
 
-/** Splices generated comments into the source data or removes existing ones */
+/** Applies or removes comments from source data based on a specified mode */
 function spliceComments(data, comments, mode = 'default', ext = '') {
-    // Determine platform-specific line endings
     const hasCRLF = data.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
     const originalLines = data.split(/\r?\n/);
@@ -263,7 +259,6 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     const annotated = originalLines.map((text, index) => ({ text, originalIndex: index }));
     let analysis = null;
 
-    // 'clean' mode removes all existing comments/documentation
     if (mode === 'clean') {
         analysis = analyzeComments(originalLines, ext);
         const finalDeletions = new Set();
@@ -291,7 +286,6 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
             const trimmedLine = targetLine.trim();
 
             const lineAnalysis = analysis[lineNum - 1];
-            // Preserve shebangs (e.g. #!/usr/bin/env node) — never treat as comment
             if (trimmedLine.startsWith('#!')) {
                 continue;
             }
@@ -317,7 +311,6 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
             annotated.splice(lineNum - 1, 1);
         }
     } else {
-        // 'default'/'light'/'full' mode: Inject AI-generated comments
         for (const c of validComments) {
             if (isLineInsideString(originalLines, c.line - 1, ext)) {
                 console.warn(`[devsplain] Skipping comment insertion at line ${c.line} to avoid string literal corruption.`);
@@ -380,7 +373,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     return annotated.map(line => line.text).join(lineEnding);
 }
 
-/** Main entry point for the CLI tool logic */
+/** Main CLI execution logic */
 async function runCLI() {
     rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
@@ -433,6 +426,7 @@ Options:
         return;
     }
 
+    // Helper to retrieve specific CLI argument values
     const getArgValue = (flag) => {
         const index = args.indexOf(flag);
         if (index !== -1 && index + 1 < args.length) {
@@ -497,7 +491,7 @@ Options:
     let successCount = 0;
     let failCount = 0;
 
-    /** Recursively traverses the file system to identify and process source files */
+    /** Recursively processes files or directories to apply comments */
     async function processPath(targetPath) {
         const stats = fs.statSync(targetPath);
 
@@ -510,6 +504,7 @@ Options:
                 '.vscode', '.idea', 'coverage'   
             ];
 
+            // Skip common dependency and configuration folders
             if (ignoredFolders.includes(folderName)) {
                 return;
             }
@@ -542,9 +537,9 @@ Options:
 
             console.log(` Analyzing ${filename} in ${mode} mode...`);
             try {
-                // Logic to either clean existing comments or replace/insert new ones
                 let comments = [];
                 let commentedCode;
+                // Perform comment processing: Clean existing, then inject new comments via LLM
                 if (mode !== 'clean') {
                     const cleanData = spliceComments(data, [], 'clean', ext);
                     comments = await getComments(cleanData, filename, config, mode);
@@ -558,7 +553,6 @@ Options:
                     console.log(`---------------------------------------\n`);
                     const answer = await askQuestion("Type 'write' to save to file, or press any key to discard: ");
                     if (answer.toLowerCase() === 'write') {
-                        // Use temporary file for atomic write operations
                         const tempPath = targetPath + '.tmp';
                         fs.writeFileSync(tempPath, commentedCode, 'utf8');
                         fs.renameSync(tempPath, targetPath);
@@ -596,6 +590,7 @@ Options:
     rl.close();
 }
 
+// Initialize the CLI application if executed as a script
 if (require.main === module) {
     runCLI().catch(err => {
         console.error(err);
