@@ -7,6 +7,7 @@ const { execSync } = require('child_process');
 /** Test suite for CLI integration */
 /** Test suite for CLI integration */
 /** Test suite for CLI integration */
+/** Test suite for CLI integration */
 describe('CLI Integration', () => {
 
     /** Test case for default folder scanning */
@@ -15,6 +16,7 @@ describe('CLI Integration', () => {
     /** Test case: Default to scanning root folder if no filepath is provided */
     // Test default folder scanning without a filepath provided
     // Test default folder scanning
+    /** Test case: Default to scanning root folder if no filepath is provided */
     test('should default to scanning root folder if no filepath is provided', () => {
         try {
             // Mock API key for CLI command execution
@@ -22,11 +24,13 @@ describe('CLI Integration', () => {
             // Execute the CLI command with a mock API key
             // Execute the CLI command with a mock API key
             // Execute the CLI command
+            // Execute the CLI command with environment variables
             execSync('node bin/cli.js', {
                 env: { ...process.env, DEVSPLAIN_API_KEY: 'mock' }
             });
         // Handle execution errors
         // Handle execution errors
+        // Handle execution errors and verify error output
         } catch (error) {
             // Verify the error output contains the expected message
             // Verify the error output
@@ -43,6 +47,7 @@ describe('CLI Integration', () => {
     /** Test case: Exit with error 1 if a fake filepath is provided */
     // Test error handling with a fake filepath
     // Test error handling with a fake filepath provided
+    /** Test case: Exit with error 1 if a fake filepath is provided */
     test('should exit with error 1 if a fake filepath is provided', () => {
         // Attempt to execute CLI with fake filepath
         // Attempt to execute CLI with fake filepath
@@ -50,9 +55,11 @@ describe('CLI Integration', () => {
             // Execute the CLI command with a fake filepath
             // Execute the CLI command with a fake filepath
             // Execute the CLI command with a fake filepath
+            // Attempt to execute CLI with a fake filepath and expect an error
             execSync('node bin/cli.js definitely_fake_file.js');
         // Error handling for fake filepath
         // Error handling for fake filepath
+        // Error handling for fake filepath: verify error message and status code
         } catch (error) {
             // Verify the error message and status code
             // Verify the error message and status code
