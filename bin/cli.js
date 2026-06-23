@@ -10,6 +10,7 @@ const { execSync } = require('child_process');
 let rl;
 let askQuestion;
 
+/** Checks if the current Git repository has uncommitted changes [ds] */
 function isGitDirty() {
     try {
         const gitDir = execSync('git rev-parse --is-inside-work-tree', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
@@ -22,6 +23,7 @@ function isGitDirty() {
     return false;
 }
 
+/** Checks if a given line index is inside a string in a list of code lines [ds] */
 function isLineInsideString(lines, targetLineIndex, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     let inBacktick = false;
@@ -95,6 +97,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
     return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble;
 }
 
+/** Analyzes comments in a list of code lines [ds] */
 function analyzeComments(lines, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
@@ -130,6 +133,7 @@ function analyzeComments(lines, ext = '') {
                 j++;
                 continue;
             }
+            // Check for comment start index in non-Python files [ds]
             if (!inSingle && !inDouble && !inBacktick && !inTripleSingle && !inTripleDouble) {
                 if (isPython) {
                     if (line[j] === '#') {
@@ -195,6 +199,7 @@ function analyzeComments(lines, ext = '') {
                         continue;
                     }
                 }
+            // Check for string literals in non-Python files [ds]
             } else {
                 if (!inSingle && !inDouble) {
                     if (line[j] === '`') {
@@ -234,6 +239,7 @@ function analyzeComments(lines, ext = '') {
                     }
                 }
             }
+            // Increment character index [ds]
             j++;
         }
         if (!isPython) {
@@ -261,6 +267,7 @@ function analyzeComments(lines, ext = '') {
     return analysis;
 }
 
+/** Splices comments into a list of code lines [ds] */
 function spliceComments(data, comments, mode = 'default', ext = '') {
     const hasCRLF = data.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
@@ -452,6 +459,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     return annotated.map(line => line.text).join(lineEnding);
 }
 
+/** Runs the CLI interface for the commenting tool [ds] */
 async function runCLI() {
     rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
@@ -572,6 +580,7 @@ Options:
     let failCount = 0;
 
     async function processPath(targetPath) {
+        // Process a directory or file path [ds]
         const stats = fs.statSync(targetPath);
 
         if (stats.isDirectory()) {
@@ -668,6 +677,7 @@ Options:
     rl.close();
 }
 
+// Run the CLI interface if this script is the main module [ds]
 if (require.main === module) {
     runCLI().catch(err => {
         console.error(err);

@@ -3,24 +3,29 @@ const fs = require('fs');
 const path = require('path');
 const { spliceComments } = require('./cli');
 
+/** Attempts to execute the post-commit hook [ds] */
 try {
+    // Get the last commit message [ds]
     const lastCommitMsg = execSync('git log -1 --format=%s', { encoding: 'utf8' }).trim();
     if (lastCommitMsg === 'docs: auto-generated comments by devsplain') {
         process.exit(0);
     }
 
+    // Get the list of changed files in the last commit [ds]
     const changedFilesStr = execSync('git diff-tree --no-commit-id --name-only -r HEAD', { encoding: 'utf8' }).trim();
     if (!changedFilesStr) {
         process.exit(0);
     }
     const changedFiles = changedFilesStr.split(/\r?\n/);
 
+    /** Defines a list of valid file extensions for commenting [ds] */
     const validExtensions = [
         '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss', '.vue', '.svelte',
         '.py', '.java', '.c', '.cpp', '.cs', '.go', '.rb', '.php', '.rs',
         '.swift', '.kt', '.dart', '.sh'
     ];
 
+    /** Filters the changed files based on valid extensions and existence [ds] */
     const filesToComment = changedFiles.filter(file => {
         const ext = path.extname(file).toLowerCase();
         const isIgnored = file.includes('node_modules/') || file.includes('tests/') || file.includes('__tests__/') || file.includes('fixtures/');
@@ -31,8 +36,10 @@ try {
         process.exit(0);
     }
 
+    // Log the number of files to be commented [ds]
     console.log(`[devsplain] Found ${filesToComment.length} file(s) in the last commit to auto-comment.`);
 
+    // Parse command-line arguments for commenting mode [ds]
     const args = process.argv.slice(2);
     let modeFlag = '';
     if (args.includes('--light')) modeFlag = ' --light';
@@ -40,6 +47,7 @@ try {
 
     let commentedAny = false;
 
+    /** Iterates through the files to be commented and attempts to comment each one [ds] */
     for (const file of filesToComment) {
         try {
             const ext = path.extname(file).toLowerCase();
@@ -53,6 +61,7 @@ try {
             } catch (prevErr) {
             }
 
+            // Check if the file has been modified beyond just comments [ds]
             if (contentPrev) {
                 const cleanHead = spliceComments(contentHead, [], 'prune', ext);
                 const cleanPrev = spliceComments(contentPrev, [], 'prune', ext);
@@ -64,6 +73,7 @@ try {
         } catch (cleanErr) {
         }
 
+        // Attempt to comment the file using the cli script [ds]
         console.log(`[devsplain] Automatically commenting file: ${file}`);
         try {
             const cliPath = path.join(__dirname, 'cli.js');
@@ -74,6 +84,7 @@ try {
         }
     }
 
+    /** If any files were commented, stage and commit the changes [ds] */
     if (commentedAny) {
         const status = execSync('git diff --name-only', { encoding: 'utf8' }).trim();
         if (status.length > 0) {
