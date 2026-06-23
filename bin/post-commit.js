@@ -5,6 +5,17 @@ const { spliceComments } = require('./cli');
 
 /** Attempts to execute the post-commit hook [ds] */
 try {
+    // Prevent the hook from firing during rebases, merges, or cherry-picks [ds]
+    const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
+    const isRebasing = fs.existsSync(path.join(gitDir, 'rebase-merge')) || fs.existsSync(path.join(gitDir, 'rebase-apply'));
+    const isMerging = fs.existsSync(path.join(gitDir, 'MERGE_HEAD'));
+    const isCherryPicking = fs.existsSync(path.join(gitDir, 'CHERRY_PICK_HEAD'));
+
+    if (isRebasing || isMerging || isCherryPicking) {
+        console.log('[devsplain] Skipping AI comment generation during git rebase/merge/cherry-pick to avoid history conflicts.');
+        process.exit(0);
+    }
+
     // Get the last commit message [ds]
     const lastCommitMsg = execSync('git log -1 --format=%s', { encoding: 'utf8' }).trim();
     if (lastCommitMsg === 'docs: auto-generated comments by devsplain') {
