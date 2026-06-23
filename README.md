@@ -168,6 +168,13 @@ Run the hook setup command inside your Git repository:
 devsplain --setup-hook
 ```
 
+### Bypassing the Hook (Manual Override)
+If you ever want to commit code without triggering the AI (for example, if you just ran `devsplain index.js --full` manually and want to freeze those specific comments without the background hook overwriting them with the project's default mode), you can bypass the hook entirely by setting the `SKIP_DEVSPLAIN` environment variable:
+
+```bash
+SKIP_DEVSPLAIN=1 git commit -m "my commit message"
+```
+
 ### Pipeline Architecture
 1. **Pre-commit Hook**: Runs your project test suite (`npm test`). If the tests fail, the commit is blocked.
 2. **Post-commit Hook**: 
