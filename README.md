@@ -83,6 +83,9 @@ devsplain --config
 
 Your settings are stored securely in `~/.devsplainrc` (configured with `chmod 600` on POSIX systems to restrict read access).
 
+> [!NOTE]
+> **API Testing Notice:** `devsplain` supports OpenAI, Anthropic, Ollama, Groq, and Gemini endpoints, but the E2E test suite has currently only been aggressively verified against the **Groq** and **Gemini** APIs. If you encounter any unexpected parsing issues or edge-case errors with other providers, please open an issue or submit a PR!
+
 ---
 
 ## CLI Usage & Options
