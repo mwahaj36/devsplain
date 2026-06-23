@@ -3,9 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const { spliceComments } = require('./cli');
 
-/** Attempts to execute the post-commit hook [ds] */
+/** Main execution block [ds] */
 try {
-    // Prevent the hook from firing during rebases, merges, or cherry-picks [ds]
+    // Get the current git directory [ds]
     const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
     const isRebasing = fs.existsSync(path.join(gitDir, 'rebase-merge')) || fs.existsSync(path.join(gitDir, 'rebase-apply'));
     const isMerging = fs.existsSync(path.join(gitDir, 'MERGE_HEAD'));
@@ -16,41 +16,41 @@ try {
         process.exit(0);
     }
 
-    // Get the last commit message [ds]
+    /** Check if the current operation is a rebase, merge or cherry-pick [ds] */
     const lastCommitMsg = execSync('git log -1 --format=%s', { encoding: 'utf8' }).trim();
     if (lastCommitMsg === 'docs: auto-generated comments by devsplain') {
         process.exit(0);
     }
 
-    // Get the list of changed files in the last commit [ds]
+    // Get the last commit message [ds]
     const changedFilesStr = execSync('git diff-tree --no-commit-id --name-only -r HEAD', { encoding: 'utf8' }).trim();
     if (!changedFilesStr) {
         process.exit(0);
     }
     const changedFiles = changedFilesStr.split(/\r?\n/);
 
-    /** Defines a list of valid file extensions for commenting [ds] */
+    /** List of valid file extensions for commenting [ds] */
     const validExtensions = [
         '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss', '.vue', '.svelte',
         '.py', '.java', '.c', '.cpp', '.cs', '.go', '.rb', '.php', '.rs',
         '.swift', '.kt', '.dart', '.sh'
     ];
 
-    /** Filters the changed files based on valid extensions and existence [ds] */
+    /** Filter files to be commented [ds] */
     const filesToComment = changedFiles.filter(file => {
         const ext = path.extname(file).toLowerCase();
         const isIgnored = file.includes('node_modules/') || file.includes('tests/') || file.includes('__tests__/') || file.includes('fixtures/');
         return validExtensions.includes(ext) && fs.existsSync(file) && !isIgnored;
     });
 
+    // Check if there are any files to comment [ds]
     if (filesToComment.length === 0) {
         process.exit(0);
     }
 
-    // Log the number of files to be commented [ds]
     console.log(`[devsplain] Found ${filesToComment.length} file(s) in the last commit to auto-comment.`);
 
-    // Parse command-line arguments for commenting mode [ds]
+    // Parse command line arguments for mode flag [ds]
     const args = process.argv.slice(2);
     let modeFlag = '';
     if (args.includes('--light')) modeFlag = ' --light';
@@ -58,7 +58,7 @@ try {
 
     let commentedAny = false;
 
-    /** Iterates through the files to be commented and attempts to comment each one [ds] */
+    /** Iterate over files to comment [ds] */
     for (const file of filesToComment) {
         try {
             const ext = path.extname(file).toLowerCase();
@@ -72,7 +72,7 @@ try {
             } catch (prevErr) {
             }
 
-            // Check if the file has been modified beyond just comments [ds]
+            // Compare file content before and after the last commit [ds]
             if (contentPrev) {
                 const cleanHead = spliceComments(contentHead, [], 'prune', ext);
                 const cleanPrev = spliceComments(contentPrev, [], 'prune', ext);
@@ -84,7 +84,7 @@ try {
         } catch (cleanErr) {
         }
 
-        // Attempt to comment the file using the cli script [ds]
+        // Comment the file using the CLI [ds]
         console.log(`[devsplain] Automatically commenting file: ${file}`);
         try {
             const cliPath = path.join(__dirname, 'cli.js');
@@ -95,7 +95,7 @@ try {
         }
     }
 
-    /** If any files were commented, stage and commit the changes [ds] */
+    /** Stage and commit auto-generated comments if any [ds] */
     if (commentedAny) {
         const status = execSync('git diff --name-only', { encoding: 'utf8' }).trim();
         if (status.length > 0) {
@@ -104,6 +104,7 @@ try {
             console.log('[devsplain] Comments committed successfully! Rollback via: git reset --hard HEAD~1');
         }
     }
+/** Catch and log any errors [ds] */
 } catch (e) {
     console.warn(`[devsplain] Warning: post-commit hook script failed: ${e.message}`);
 }
