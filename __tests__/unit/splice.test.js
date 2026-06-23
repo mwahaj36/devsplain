@@ -1,11 +1,7 @@
 const { spliceComments, isLineInsideString } = require('../../bin/cli.js');
 
-/** Test suite for line-splicing engine and quote-tracking */
-/** Test suite for line-splicing engine and quote-tracking [ds] */
 describe('Line-Splicing Engine & Quote-Tracking', () => {
 
-    /** Test for single-line and multi-line comments */
-    /** Test for single-line and multi-line comments [ds] */
     test('should splice single-line and multi-line comments correctly', () => {
         const originalCode = [
             'function greet(name) {',
@@ -18,8 +14,6 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
             { line: 2, comment: '// Return greeting' }
         ];
 
-        // Splice comments into the original code [ds]
-        // Splice comments into the original code
         const output = spliceComments(originalCode, comments);
         const expected = [
             '/** Greet function JSDoc [ds] */',
@@ -32,8 +26,6 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
         expect(output).toBe(expected);
     });
 
-    /** Test for matching indentation and aligning asterisks for JSDocs [ds] */
-    /** Test for matching indentation and aligning asterisks for JSDocs */
     test('should match indentation, aligning asterisks for JSDocs', () => {
         const originalCode = [
             'class User {',
@@ -54,8 +46,6 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
             }
         ];
 
-        // Splice comments into the original code with indentation [ds]
-        // Splice comments into the original code with indentation
         const output = spliceComments(originalCode, comments);
         const expected = [
             'class User {',
@@ -73,8 +63,6 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
         expect(output).toBe(expected);
     });
 
-    /** Test for not inserting comments inside multiline strings/template literals [ds] */
-    /** Test for not inserting comments inside multiline strings/template literals */
     test('should not insert comments inside multiline strings/template literals', () => {
         const originalCode = [
             'const html = `',
@@ -85,8 +73,6 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
             'const x = 1;'
         ];
 
-        // Check if a line is inside a multiline string [ds]
-        // Check if a line is inside a multiline string
         expect(isLineInsideString(originalCode, 1)).toBe(true);
         expect(isLineInsideString(originalCode, 2)).toBe(true);
         expect(isLineInsideString(originalCode, 3)).toBe(true);
@@ -102,8 +88,6 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
         expect(output).toBe(originalCode.join('\n'));
     });
 
-    /** Test for identifying Python-style triple quotes [ds] */
-    /** Test for identifying Python-style triple quotes */
     test('should identify Python-style triple quotes', () => {
         const pythonCode = [
             'def hello():',
@@ -113,14 +97,10 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
             '    print("hello")'
         ];
 
-        // Check if a line is inside a Python-style triple quote [ds]
-        // Check if a line is inside a Python-style triple quote
         expect(isLineInsideString(pythonCode, 2, '.py')).toBe(true);
         expect(isLineInsideString(pythonCode, 4, '.py')).toBe(false);
     });
 
-    /** Test for prune mode (deleting all comment lines safely) [ds] */
-    /** Test for prune mode (deleting all comment lines safely) */
     test('should handle prune mode (deleting all comment lines safely)', () => {
         const commentedCode = [
             '// Import dependencies',
@@ -136,8 +116,6 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
 
         const deletions = [];
 
-        // Splice comments into the original code in prune mode [ds]
-        // Splice comments into the original code in prune mode
         const output = spliceComments(commentedCode, deletions, 'prune');
         const expected = [
             'const fs = require("fs");',
@@ -178,8 +156,6 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
         expect(output).toBe(expected);
     });
 
-    /** Test for preventing code deletion in prune mode [ds] */
-    /** Test for preventing code deletion in prune mode */
     test('should prevent code deletion in prune mode (safety block)', () => {
         const code = [
             'const x = 1;',
@@ -192,8 +168,6 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
             { line: 2, action: 'delete' }
         ];
 
-        // Splice comments into the original code in prune mode with safety block [ds]
-        // Splice comments into the original code in prune mode with safety block
         const output = spliceComments(code, deletions, 'prune');
         const expected = [
             'const x = 1;',
@@ -203,8 +177,6 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
         expect(output).toBe(expected);
     });
 
-    /** Fuzz test for randomized comment inputs [ds] */
-    /** Fuzz test for randomized comment inputs */
     test('fuzz test: randomized comment inputs should not crash or corrupt code', () => {
         const originalCode = Array.from({ length: 50 }, (_, i) => `const val_${i} = ${i};`).join('\n');
         const comments = [];
@@ -216,23 +188,17 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
             });
         }
 
-        // Test that the function does not throw an error [ds]
-        // Test that the function does not throw an error
         expect(() => {
             spliceComments(originalCode, comments);
         }).not.toThrow();
     });
 
-    /** Golden regression test [ds] */
-    /** Golden regression test */
     test('golden regression test', () => {
         const code = 'class App {\n    start() {\n        console.log("Starting...");\n    }\n}';
         const comments = [
             { line: 1, comment: '// Main application class' },
             { line: 2, comment: '    /** Start the application */' }
         ];
-        // Splice comments into the original code for regression test [ds]
-        // Splice comments into the original code for regression test
         const output = spliceComments(code, comments);
         expect(output).toMatchSnapshot();
     });

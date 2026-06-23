@@ -10,7 +10,6 @@ const { execSync } = require('child_process');
 let rl;
 let askQuestion;
 
-/** Checks if the current Git repository is dirty by inspecting status. */
 function isGitDirty() {
     try {
         const gitDir = execSync('git rev-parse --is-inside-work-tree', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
@@ -23,8 +22,6 @@ function isGitDirty() {
     return false;
 }
 
-/** Determines if a specific line index is within a string literal (handling quotes/backticks). [ds] */
-/** Determines if a specific line index is within a string literal (handling quotes/backticks). */
 function isLineInsideString(lines, targetLineIndex, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     let inBacktick = false;
@@ -98,8 +95,6 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
     return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble;
 }
 
-/** Parses a file to identify pure comments and block structures. [ds] */
-/** Parses a file to identify pure comments and block structures. */
 function analyzeComments(lines, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
@@ -141,11 +136,27 @@ function analyzeComments(lines, ext = '') {
                         commentStartIndex = j;
                         break;
                     }
+                    if (line.slice(j, j + 2) === '/*') {
+                        commentStartIndex = j;
+                        inBlockJS = true;
+                        j += 2;
+                        continue;
+                    }
+                    if (line.slice(j, j + 2) === '//') {
+                        commentStartIndex = j;
+                        break;
+                    }
                 } else if (isHTML) {
                     if (line.slice(j, j + 4) === '<!--') {
                         commentStartIndex = j;
                         inBlockHTML = true;
                         j += 4;
+                        continue;
+                    }
+                    if (line.slice(j, j + 2) === '/*') {
+                        commentStartIndex = j;
+                        inBlockJS = true;
+                        j += 2;
                         continue;
                     }
                     if (line.slice(j, j + 2) === '//') {
@@ -250,8 +261,6 @@ function analyzeComments(lines, ext = '') {
     return analysis;
 }
 
-/** Splices comments into code or cleans existing ones, with safety checks. [ds] */
-/** Splices comments into code or cleans existing ones, with safety checks. */
 function spliceComments(data, comments, mode = 'default', ext = '') {
     const hasCRLF = data.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
@@ -266,7 +275,6 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     if (mode === 'clean' || mode === 'prune') {
         analysis = analyzeComments(originalLines, ext);
         const finalDeletions = new Set();
-        
         if (mode === 'clean') {
             let i = 0;
             while (i < originalLines.length) {
@@ -274,15 +282,12 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
                     let start = i;
                     let end = i;
                     while (end < originalLines.length && analysis[end].isInsideBlock) end++;
-                    
                     let blockStart = start - 1;
                     let blockEnd = end - 1;
-                    
                     let hasDs = false;
                     for (let k = blockStart; k <= blockEnd; k++) {
                         if (originalLines[k].includes('[ds]')) hasDs = true;
                     }
-                    
                     if (hasDs) {
                         for (let k = blockStart; k <= blockEnd; k++) {
                             dsBlocks.add(k + 1);
@@ -420,7 +425,6 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
             if (lineAnalysis && lineAnalysis.commentStartIndex !== -1 && !lineAnalysis.isPureComment) {
                 const isDsBlockLine = dsBlocks.has(origIdx + 1);
                 const hasDsInline = originalLine.includes('[ds]');
-                
                 if (mode === 'prune' || (mode === 'clean' && (hasDsInline || isDsBlockLine))) {
                     const expectedStripped = originalLine.slice(0, lineAnalysis.commentStartIndex).trimEnd();
                     if (text === expectedStripped) {
@@ -448,8 +452,6 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     return annotated.map(line => line.text).join(lineEnding);
 }
 
-/** Main entry point for the CLI tool. [ds] */
-/** Main entry point for the CLI tool. */
 async function runCLI() {
     rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
@@ -504,7 +506,6 @@ Options:
         return;
     }
 
-    // Helper to extract flag values from command line arguments [ds]
     const getArgValue = (flag) => {
         const index = args.indexOf(flag);
         if (index !== -1 && index + 1 < args.length) {
@@ -570,8 +571,6 @@ Options:
     let successCount = 0;
     let failCount = 0;
 
-    /** Recursively processes files or directories to apply AI-generated comments. [ds] */
-    /** Recursively processes files or directories to apply AI-generated comments. */
     async function processPath(targetPath) {
         const stats = fs.statSync(targetPath);
 
@@ -581,7 +580,8 @@ Options:
                 'node_modules', '.git', 'dist', 'build', 'out', 
                 '.next', '.nuxt', '.svelte-kit', 
                 'venv', 'env', '.venv',          
-                '.vscode', '.idea', 'coverage'   
+                '.vscode', '.idea', 'coverage',
+                'tests', '__tests__', 'fixtures'
             ];
 
             if (ignoredFolders.includes(folderName)) {
@@ -618,12 +618,12 @@ Options:
             try {
                 let comments = [];
                 let commentedCode;
-                if (mode !== 'clean') {
+                if (mode !== 'clean' && mode !== 'prune') {
                     const cleanData = spliceComments(data, [], 'clean', ext);
                     comments = await getComments(cleanData, filename, config, mode);
                     commentedCode = spliceComments(cleanData, comments, mode, ext);
                 } else {
-                    commentedCode = spliceComments(data, [], 'clean', ext);
+                    commentedCode = spliceComments(data, [], mode, ext);
                 }
                 if (isDryRun) {
                     console.log(`\n --- DRY RUN PREVIEW: ${filename} ---`);
@@ -668,8 +668,6 @@ Options:
     rl.close();
 }
 
-// Check if the script is run directly vs required as a module [ds]
-// Check if the script is run directly vs required as a module
 if (require.main === module) {
     runCLI().catch(err => {
         console.error(err);

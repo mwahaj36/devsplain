@@ -1,0 +1,86 @@
+
+$primary:
+$danger:
+$success:
+$bg-color:
+$text-color:
+$border-radius: 0.5rem;
+
+@mixin flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@mixin card-shadow {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.app-container {
+  background-color: $bg-color;
+  color: $text-color;
+  min-height: 100vh;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+
+  .header {
+    background: white;
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    @include card-shadow;
+
+    .brand {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: $primary;
+    }
+
+    nav {
+      ul {
+        display: flex;
+        gap: 1.5rem;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+
+        li a {
+          text-decoration: none;
+          color: $text-color;
+          font-weight: 500;
+          transition: color 0.3s;
+
+          &:hover {
+            color: $primary;
+          }
+        }
+      }
+    }
+  }
+
+  .main-content {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+
+    .widget-panel {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+
+      .widget {
+        background: white;
+        border-radius: $border-radius;
+        padding: 1.5rem;
+        @include card-shadow;
+
+        &.alert {
+          border-left: 4px solid $danger;
+        }
+
+        &.ok {
+          border-left: 4px solid $success;
+        }
+      }
+    }
+  }
+}

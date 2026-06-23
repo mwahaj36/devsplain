@@ -1,0 +1,65 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo">CorpDash</div>
+        <ul class="nav-links">
+            <li><a href="#overview">Overview</a></li>
+            <li><a href="#analytics">Analytics</a></li>
+            <li><a href="#reports">Reports</a></li>
+            <li><a href="#settings">Settings</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+        <header class="topbar">
+            <h1>Welcome back, Admin</h1>
+            <div class="user-profile">
+                <img src="avatar.png" alt="User Avatar">
+                <button id="logoutBtn">Logout</button>
+            </div>
+        </header>
+        <section class="metrics-grid">
+            <div class="card metric">
+                <h3>Total Revenue</h3>
+                <p class="value">$124,500</p>
+                <span class="trend positive">+12%</span>
+            </div>
+            <div class="card metric">
+                <h3>Active Users</h3>
+                <p class="value">45,210</p>
+                <span class="trend negative">-2%</span>
+            </div>
+            <div class="card metric">
+                <h3>Server Load</h3>
+                <p class="value">68%</p>
+                <progress value="68" max="100"></progress>
+            </div>
+        </section>
+        <section class="data-table">
+            <h2>Recent Transactions</h2>
+            <table id="txTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Date</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>TX123</td><td>2023-10-01</td><td>$450.00</td><td>Completed</td></tr>
+                    <tr><td>TX124</td><td>2023-10-02</td><td>$120.00</td><td>Pending</td></tr>
+                </tbody>
+            </table>
+        </section>
+    </main>
+    <script src="app.js"></script>
+</body>
+</html>
