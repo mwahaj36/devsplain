@@ -5,7 +5,13 @@ const { spliceComments } = require('./cli');
 
 /** Main execution block [ds] */
 try {
-    // Get the current git directory [ds]
+    // Allow users to completely bypass the AI hook using an environment variable [ds]
+    if (process.env.SKIP_DEVSPLAIN) {
+        console.log('[devsplain] SKIP_DEVSPLAIN is set. Bypassing AI generation.');
+        process.exit(0);
+    }
+
+    // Prevent the hook from firing during rebases, merges, or cherry-picks [ds]
     const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
     const isRebasing = fs.existsSync(path.join(gitDir, 'rebase-merge')) || fs.existsSync(path.join(gitDir, 'rebase-apply'));
     const isMerging = fs.existsSync(path.join(gitDir, 'MERGE_HEAD'));
@@ -57,6 +63,7 @@ try {
     if (args.includes('--full')) modeFlag = ' --full';
 
     let commentedAny = false;
+    const successfullyCommentedFiles = [];
 
     /** Iterate over files to comment [ds] */
     for (const file of filesToComment) {
@@ -90,6 +97,7 @@ try {
             const cliPath = path.join(__dirname, 'cli.js');
             execSync(`node "${cliPath}" "${file}" --force${modeFlag}`, { stdio: 'inherit' });
             commentedAny = true;
+            successfullyCommentedFiles.push(file);
         } catch (err) {
             console.warn(`[devsplain] Warning: Failed to comment ${file}: ${err.message}`);
         }
@@ -97,10 +105,18 @@ try {
 
     /** Stage and commit auto-generated comments if any [ds] */
     if (commentedAny) {
-        const status = execSync('git diff --name-only', { encoding: 'utf8' }).trim();
-        if (status.length > 0) {
+        // Only stage the exact files that the AI touched to avoid accidentally committing unstaged work [ds]
+        for (const file of successfullyCommentedFiles) {
+            try {
+                execSync(`git add "${file}"`);
+            } catch (addErr) {}
+        }
+        
+        // Check if there are actually staged changes now [ds]
+        const stagedChanges = execSync('git diff --cached --name-only', { encoding: 'utf8' }).trim();
+        if (stagedChanges.length > 0) {
             console.log('[devsplain] Staging and committing auto-generated comments...');
-            execSync('git commit -am "docs: auto-generated comments by devsplain" --no-verify', { stdio: 'inherit' });
+            execSync('git commit -m "docs: auto-generated comments by devsplain" --no-verify', { stdio: 'inherit' });
             console.log('[devsplain] Comments committed successfully! Rollback via: git reset --hard HEAD~1');
         }
     }

@@ -566,10 +566,10 @@ Options:
     if (cliProvider) {
         config.provider = cliProvider;
         if (!cliModel) {
-            config.model = cliProvider === 'gemini' ? 'gemini-2.0-flash' : 'llama-3.3-70b-versatile';
+            config.model = cliProvider === 'gemini' ? 'gemini-2.0-flash' : (cliProvider === 'claude' ? 'claude-3-5-sonnet-20240620' : 'llama-3.3-70b-versatile');
         }
         if (!cliBaseUrl) {
-            config.baseUrl = cliProvider === 'gemini' ? null : (cliProvider === 'groq' ? 'https://api.groq.com/openai' : (cliProvider === 'openai' ? 'https://api.openai.com' : ''));
+            config.baseUrl = cliProvider === 'gemini' ? null : (cliProvider === 'groq' ? 'https://api.groq.com/openai' : (cliProvider === 'openai' ? 'https://api.openai.com' : (cliProvider === 'claude' ? 'https://api.anthropic.com' : '')));
         }
     }
     if (cliModel) config.model = cliModel;
