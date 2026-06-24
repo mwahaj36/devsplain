@@ -5,6 +5,12 @@ An agent-agnostic CLI tool that adds JSDoc and inline comments using state-of-th
 
 devsplain never rewrites executable code.
 If the original source cannot be reproduced exactly after comment insertion, the operation aborts.
+
+Unlike interactive AI editors, `devsplain` is a single-shot CLI designed for batch documentation passes, CI pipelines, and git hook automation—no agent overhead, no per-file confirmation loops.
+
+> [!TIP]
+> **Built with devsplain**
+> This entire repository is heavily "dogfooded". Every single AI-generated `[ds]` comment you see in the source code of this tool was automatically generated and committed by `devsplain` itself using its native git hooks!
 ---
 
 ## Key Features
@@ -81,10 +87,10 @@ To force re-run the configuration wizard at any time, execute:
 devsplain --config
 ```
 
-Your settings are stored securely in `~/.devsplainrc` (configured with `chmod 600` on POSIX systems to restrict read access).
+Your settings are stored securely in `~/.devsplainrc` (configured with `chmod 600` on POSIX systems to restrict read access, and keystrokes are masked during input).
 
-> [!NOTE]
-> **API Testing Notice:** `devsplain` supports OpenAI, Anthropic, Ollama, Groq, and Gemini endpoints, but the E2E test suite has currently only been aggressively verified against the **Groq** and **Gemini** APIs. If you encounter any unexpected parsing issues or edge-case errors with other providers, please open an issue or submit a PR!
+> [!CAUTION]
+> **Security Note:** Prefer configuring the `DEVSPLAIN_API_KEY` environment variable over using the `--api-key` CLI flag for recurring use. CLI flags may be exposed in your shell history (`~/.bash_history`) and process lists.
 
 ---
 
@@ -133,13 +139,10 @@ devsplain lib/ --prune
 devsplain src/utils.ts --provider gemini --model gemini-2.0-flash --api-key YOUR_KEY
 ```
 
-> [!WARNING]
-> **Directory Traversal Caution**
-> The built-in list of ignored folders (like `node_modules`, `.git`, `dist`, etc.) is not exhaustive. If you run `devsplain` on a broad directory that contains unignored directories (such as local caches or build directories), it may start commenting unwanted files in random folders.
-> 
-> To prevent this, it is highly recommended to either:
-> 1. Use the **Automated Git Hooks** to comment only on files modified in your commits.
-> 2. Pass specific files or selective subfolders manually (e.g., `devsplain src/utils.ts`) instead of targeting broad directories.
+> [!TIP]
+> **Directory Traversal Protection**
+> When you run `devsplain` on a directory, it automatically ignores common build/dependency folders (`node_modules`, `.git`, `dist`, etc.).
+> To ignore custom directories, simply create a `.devsplainignore` file in your project root using the standard `.gitignore` syntax. (A default `.devsplainignore` is automatically generated when you run `--setup-hook`).
 
 ---
 
@@ -169,11 +172,21 @@ devsplain --setup-hook
 ```
 
 ### Bypassing the Hook (Manual Override)
-If you ever want to commit code without triggering the AI (for example, if you just ran `devsplain index.js --full` manually and want to freeze those specific comments without the background hook overwriting them with the project's default mode), you can bypass the hook entirely by setting the `SKIP_DEVSPLAIN` environment variable:
-
+If you ever want to commit code without triggering the AI (for example, if you just ran `devsplain index.js --full` manually and want to freeze those specific comments without the background hook overwriting them), you can bypass the hook entirely:
 ```bash
 SKIP_DEVSPLAIN=1 git commit -m "my commit message"
 ```
+
+### Forcing or Skipping Auto-Prune
+If you have configured `autoPrune` (aggressive overwrite) in your `~/.devsplainrc` but want to change the behavior for a specific commit:
+- To **force an overwrite** (destroying all human/AI comments before generating new ones) regardless of your config:
+  ```bash
+  DS_OVER=1 git commit -m "overwrite docs"
+  ```
+- To **force preservation** of existing comments (overriding a global prune preference):
+  ```bash
+  DS_KEEP=1 git commit -m "keep docs"
+  ```
 
 ### Pipeline Architecture
 1. **Pre-commit Hook**: Runs your project test suite (`npm test`). If the tests fail, the commit is blocked.
@@ -183,6 +196,13 @@ SKIP_DEVSPLAIN=1 git commit -m "my commit message"
    - Automatically stages and commits the comments in a secondary commit: `docs: auto-generated comments by devsplain`.
    - The secondary commit runs with `--no-verify` to prevent recursive hook invocation.
 3. **Resilience**: If the API key is missing or the network is offline during the post-commit process, the script logs a warning to stderr and exits with status code `0`. Your initial commit remains safe and unblocked.
+
+---
+
+## Known Limitations & Contributing
+
+> [!NOTE]
+> **API Testing Notice:** `devsplain` natively supports OpenAI, Anthropic, Ollama, Groq, and Gemini endpoints, but the E2E test suite has currently only been aggressively verified against the **Groq** and **Gemini** APIs. If you encounter any unexpected parsing issues or edge-case errors with other providers, please open an issue or submit a PR!
 
 ---
 

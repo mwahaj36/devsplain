@@ -549,6 +549,8 @@ Options:
     if (args.includes('--prune')) mode = 'prune';
     const isDryRun = args.includes('--dry-run');
     const isForce = args.includes('--force');
+    const hasOverwriteFlag = args.includes('--overwrite');
+    const hasKeepFlag = args.includes('--keep');
 
     if (process.env.NODE_ENV !== 'test' && isGitDirty() && !isForce) {
         console.error("Error: Git working tree is dirty. Please commit or stash your changes, or use --force to bypass this check.");
@@ -579,24 +581,48 @@ Options:
     let successCount = 0;
     let failCount = 0;
 
+    const isOverwrite = (hasOverwriteFlag || config.autoPrune) && !hasKeepFlag;
+
+    // Load .devsplainignore patterns [ds]
+    let userIgnorePatterns = [];
+    try {
+        const ignorePath = path.join(process.cwd(), '.devsplainignore');
+        if (fs.existsSync(ignorePath)) {
+            const ignoreContent = fs.readFileSync(ignorePath, 'utf8');
+            userIgnorePatterns = ignoreContent.split(/\r?\n/)
+                .map(line => line.trim())
+                .filter(line => line && !line.startsWith('#'));
+        }
+    } catch(e) {}
+
+    const defaultIgnoredFolders = [
+        'node_modules', '.git', 'dist', 'build', 'out', 
+        '.next', '.nuxt', '.svelte-kit', 
+        'venv', 'env', '.venv',          
+        '.vscode', '.idea', 'coverage',
+        'tests', '__tests__', 'fixtures'
+    ];
+    const allIgnored = [...defaultIgnoredFolders, ...userIgnorePatterns];
+
+    function isPathIgnored(targetPath) {
+        const filename = path.basename(targetPath);
+        for (const pattern of allIgnored) {
+            const cleanPattern = pattern.replace(/\/$/, '').replace(/\\$/, '');
+            if (filename === cleanPattern) return true;
+            if (pattern.startsWith('*') && filename.endsWith(pattern.slice(1))) return true;
+        }
+        return false;
+    }
+
     async function processPath(targetPath) {
         // Process a directory or file path [ds]
         const stats = fs.statSync(targetPath);
 
+        if (isPathIgnored(targetPath)) {
+            return;
+        }
+
         if (stats.isDirectory()) {
-            const folderName = path.basename(targetPath);
-            const ignoredFolders = [
-                'node_modules', '.git', 'dist', 'build', 'out', 
-                '.next', '.nuxt', '.svelte-kit', 
-                'venv', 'env', '.venv',          
-                '.vscode', '.idea', 'coverage',
-                'tests', '__tests__', 'fixtures'
-            ];
-
-            if (ignoredFolders.includes(folderName)) {
-                return;
-            }
-
             console.log(`\n Scanning directory: ${targetPath}`);
             const items = fs.readdirSync(targetPath);
             for (const item of items) {
@@ -628,7 +654,8 @@ Options:
                 let comments = [];
                 let commentedCode;
                 if (mode !== 'clean' && mode !== 'prune') {
-                    const cleanData = spliceComments(data, [], 'clean', ext);
+                    const preProcessMode = isOverwrite ? 'prune' : 'clean';
+                    const cleanData = spliceComments(data, [], preProcessMode, ext);
                     comments = await getComments(cleanData, filename, config, mode);
                     commentedCode = spliceComments(cleanData, comments, mode, ext);
                 } else {

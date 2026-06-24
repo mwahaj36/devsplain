@@ -7,6 +7,7 @@ const readline = require('readline');
 async function installHooks() {
     try {
         const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
+        const gitRoot = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
         const hooksDir = path.join(gitDir, 'hooks');
         if (!fs.existsSync(hooksDir)) {
             fs.mkdirSync(hooksDir, { recursive: true });
@@ -72,10 +73,36 @@ node "${postCommitScript}"${modeArgs} || exit 1
         } catch (err) {}
 
         // Display a success message if the hooks are installed successfully [ds]
-        console.log('Success: Native Git pre-commit and post-commit hooks installed successfully!');
+        console.log(`[devsplain] Git post-commit hook successfully installed at: ${postCommitHookPath}`);
+
+        // Generate default .devsplainignore if it doesn't exist [ds]
+        const ignorePath = path.join(gitRoot, '.devsplainignore');
+        if (!fs.existsSync(ignorePath)) {
+            const defaultIgnore = `node_modules/
+.git/
+dist/
+build/
+out/
+.next/
+.nuxt/
+.svelte-kit/
+venv/
+env/
+.venv/
+.vscode/
+.idea/
+coverage/
+tests/
+__tests__/
+fixtures/
+`;
+            fs.writeFileSync(ignorePath, defaultIgnore);
+            console.log(`[devsplain] Created default .devsplainignore file at: ${ignorePath}`);
+        }
     // Catch and handle any exceptions that occur during the installation process [ds]
     } catch (e) {
         console.warn('Warning: Could not set up Git hooks (not inside a git repository or git command missing).');
+        console.warn(e.message);
     }
 }
 

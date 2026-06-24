@@ -83,7 +83,9 @@ try {
             if (contentPrev) {
                 const cleanHead = spliceComments(contentHead, [], 'prune', ext);
                 const cleanPrev = spliceComments(contentPrev, [], 'prune', ext);
-                if (cleanHead === cleanPrev) {
+                // If they explicitly requested an overwrite via env var, don't skip [ds]
+                const isExplicitOverwrite = !!process.env.DS_OVER;
+                if (cleanHead === cleanPrev && !isExplicitOverwrite) {
                     console.log(`[devsplain] Skipping ${file}: commit contains only comment changes.`);
                     continue;
                 }
@@ -94,8 +96,12 @@ try {
         // Comment the file using the CLI [ds]
         console.log(`[devsplain] Automatically commenting file: ${file}`);
         try {
+            let extraFlags = '';
+            if (process.env.DS_OVER) extraFlags += ' --overwrite';
+            if (process.env.DS_KEEP) extraFlags += ' --keep';
+
             const cliPath = path.join(__dirname, 'cli.js');
-            execSync(`node "${cliPath}" "${file}" --force${modeFlag}`, { stdio: 'inherit' });
+            execSync(`node "${cliPath}" "${file}" --force${modeFlag}${extraFlags}`, { stdio: 'inherit' });
             commentedAny = true;
             successfullyCommentedFiles.push(file);
         } catch (err) {

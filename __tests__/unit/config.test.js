@@ -43,7 +43,8 @@ describe('Config Module (getConfig)', () => {
             .mockImplementationOnce((query, cb) => cb('2'))
             .mockImplementationOnce((query, cb) => cb(''))
             .mockImplementationOnce((query, cb) => cb('gemini-key'))
-            .mockImplementationOnce((query, cb) => cb('y'));
+            .mockImplementationOnce((query, cb) => cb('y')) // autoPrune
+            .mockImplementationOnce((query, cb) => cb('y')); // confirm
 
         readline.createInterface.mockReturnValue(mockRl);
 
@@ -53,7 +54,8 @@ describe('Config Module (getConfig)', () => {
             provider: 'gemini',
             model: 'gemini-2.0-flash',
             apiKey: 'gemini-key',
-            baseUrl: null
+            baseUrl: null,
+            autoPrune: true
         });
 
         expect(readline.createInterface).toHaveBeenCalled();
