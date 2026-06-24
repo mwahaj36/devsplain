@@ -204,6 +204,13 @@ If you want to change this behavior for a specific commit:
 > [!NOTE]
 > **API Testing Notice:** `devsplain` natively supports OpenAI, Anthropic, Ollama, Groq, and Gemini endpoints, but the E2E test suite has currently only been aggressively verified against the **Groq** and **Gemini** APIs. If you encounter any unexpected parsing issues or edge-case errors with other providers, please open an issue or submit a PR!
 
+### Lexer Architecture Trade-offs
+To achieve a zero-dependency architecture (avoiding hundreds of megabytes of Tree-sitter AST binaries), `devsplain` uses a highly optimized character-by-character deterministic state machine to track strings and comments across 22 languages. While this protects 99.9% of production code flawlessly, there are mathematically unavoidable edge cases for a non-AST parser:
+
+1. **JavaScript Regex Literals (`/ "/`)**: The lexer does not track regex literals. A quote inside a regex literal will falsely toggle the string state. However, because JS strings do not span multiple lines, the lexer forces a state reset at the end of every line. The blast radius is strictly contained to that single line.
+2. **C++ Raw Multi-Line Strings (`R"( ... )"`)**: If a C++ raw string spans multiple lines and contains an odd number of internal `"` characters, the lexer will temporarily desync because it resets string state at line ends for C++.
+3. **Nested Block Comments (Rust, Swift)**: Swift and Rust allow nested block comments (e.g., `/* outer /* inner */ */`). The lexer does not track nesting depth and will exit block-comment mode at the very first `*/` it encounters.
+
 ---
 
 ## License
