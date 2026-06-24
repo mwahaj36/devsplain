@@ -26,42 +26,102 @@ function isGitDirty() {
 /** Checks if a line is inside a string literal [ds] */
 function isLineInsideString(lines, targetLineIndex, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
+    const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
     let inBacktick = false;
     let inTripleDouble = false;
     let inTripleSingle = false;
     let inSingle = false;
     let inDouble = false;
-
+    let inBlockJS = false;
+    let inBlockHTML = false;
     for (let i = 0; i < targetLineIndex; i++) {
         const line = lines[i];
         let j = 0;
         while (j < line.length) {
+            if (inBlockJS) {
+                if (line.slice(j, j + 2) === '*/') {
+                    inBlockJS = false;
+                    j += 2;
+                    continue;
+                }
+                j++;
+                continue;
+            }
+            if (inBlockHTML) {
+                if (line.slice(j, j + 3) === '-->') {
+                    inBlockHTML = false;
+                    j += 3;
+                    continue;
+                }
+                j++;
+                continue;
+            }
+            // Check if comment starts (skip processing quotes if we are entering a comment)
+            if (!inSingle && !inDouble && !inBacktick && !inTripleSingle && !inTripleDouble) {
+                if (isPython) {
+                    if (line[j] === '#') {
+                        break; // Ignore rest of line
+                    }
+                } else if (isHTML) {
+                    if (line.slice(j, j + 4) === '<!--') {
+                        inBlockHTML = true;
+                        j += 4;
+                        continue;
+                    }
+                    if (line.slice(j, j + 2) === '/*') {
+                        inBlockJS = true;
+                        j += 2;
+                        continue;
+                    }
+                    if (line.slice(j, j + 2) === '//') {
+                        break; // Ignore rest of line
+                    }
+                } else {
+                    if (line.slice(j, j + 2) === '//') {
+                        break; // Ignore rest of line
+                    }
+                    if (line.slice(j, j + 2) === '/*') {
+                        inBlockJS = true;
+                        j += 2;
+                        continue;
+                    }
+                    const isShellOrRuby = ['.sh', '.rb', '.php'].includes(ext.toLowerCase());
+                    if (isShellOrRuby && line[j] === '#') {
+                        break; // Ignore rest of line
+                    }
+                }
+            }
             if (isPython) {
-                if (!inTripleSingle) {
+                if (!inTripleSingle && !inSingle && !inDouble) {
                     if (line.slice(j, j + 3) === '"""') {
                         inTripleDouble = !inTripleDouble;
                         j += 3;
                         continue;
                     }
                 }
-                if (!inTripleDouble) {
+                if (!inTripleDouble && !inSingle && !inDouble) {
                     if (line.slice(j, j + 3) === "'''") {
                         inTripleSingle = !inTripleSingle;
                         j += 3;
                         continue;
                     }
                 }
-            } else {
-                if (!inSingle && !inDouble && line[j] === '`') {
-                    let escaped = false;
-                    let k = j - 1;
-                    while (k >= 0 && line[k] === '\\') {
-                        escaped = !escaped;
-                        k--;
+            }
+            if (!inTripleSingle && !inTripleDouble) {
+                if (!isPython) {
+                    if (!inSingle && !inDouble) {
+                        if (line[j] === '`') {
+                        let escaped = false;
+                        let k = j - 1;
+                        while (k >= 0 && line[k] === '\\') {
+                            escaped = !escaped;
+                            k--;
+                        }
+                        if (!escaped) {
+                            inBacktick = !inBacktick;
+                        }
                     }
-                    if (!escaped) {
-                        inBacktick = !inBacktick;
-                    }
+                }
                 }
                 if (!inBacktick) {
                     if (line[j] === '"' && !inSingle) {
@@ -89,7 +149,8 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
             }
             j++;
         }
-        if (!isPython) {
+        const resetsAtLineEnd = ['.js', '.jsx', '.ts', '.tsx', '.java', '.c', '.cpp', '.cs', '.go', '.swift', '.kt', '.dart'].includes(ext.toLowerCase());
+        if (resetsAtLineEnd) {
             inSingle = false;
             inDouble = false;
         }
@@ -139,16 +200,6 @@ function analyzeComments(lines, ext = '') {
                         commentStartIndex = j;
                         break;
                     }
-                    if (line.slice(j, j + 2) === '/*') {
-                        commentStartIndex = j;
-                        inBlockJS = true;
-                        j += 2;
-                        continue;
-                    }
-                    if (line.slice(j, j + 2) === '//') {
-                        commentStartIndex = j;
-                        break;
-                    }
                 } else if (isHTML) {
                     if (line.slice(j, j + 4) === '<!--') {
                         commentStartIndex = j;
@@ -177,30 +228,33 @@ function analyzeComments(lines, ext = '') {
                         j += 2;
                         continue;
                     }
-                    if (line[j] === '#') {
+                    const isShellOrRuby = ['.sh', '.rb', '.php'].includes(ext.toLowerCase());
+                    if (isShellOrRuby && line[j] === '#') {
                         commentStartIndex = j;
                         break;
                     }
                 }
             }
             if (isPython) {
-                if (!inTripleSingle) {
+                if (!inTripleSingle && !inSingle && !inDouble) {
                     if (line.slice(j, j + 3) === '"""') {
                         inTripleDouble = !inTripleDouble;
                         j += 3;
                         continue;
                     }
                 }
-                if (!inTripleDouble) {
+                if (!inTripleDouble && !inSingle && !inDouble) {
                     if (line.slice(j, j + 3) === "'''") {
                         inTripleSingle = !inTripleSingle;
                         j += 3;
                         continue;
                     }
                 }
-            } else {
-                if (!inSingle && !inDouble) {
-                    if (line[j] === '`') {
+            }
+            if (!inTripleSingle && !inTripleDouble) {
+                if (!isPython) {
+                    if (!inSingle && !inDouble) {
+                        if (line[j] === '`') {
                         let escaped = false;
                         let k = j - 1;
                         while (k >= 0 && line[k] === '\\') {
@@ -211,6 +265,7 @@ function analyzeComments(lines, ext = '') {
                             inBacktick = !inBacktick;
                         }
                     }
+                }
                 }
                 if (!inBacktick) {
                     if (line[j] === '"' && !inSingle) {
@@ -239,7 +294,8 @@ function analyzeComments(lines, ext = '') {
             }
             j++;
         }
-        if (!isPython) {
+        const resetsAtLineEnd = ['.js', '.jsx', '.ts', '.tsx', '.java', '.c', '.cpp', '.cs', '.go', '.swift', '.kt', '.dart'].includes(ext.toLowerCase());
+        if (resetsAtLineEnd) {
             inSingle = false;
             inDouble = false;
         }
@@ -286,7 +342,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
                     let start = i;
                     let end = i;
                     while (end < originalLines.length && analysis[end].isInsideBlock) end++;
-                    let blockStart = start - 1;
+                    let blockStart = Math.max(0, start - 1);
                     let blockEnd = end - 1;
                     let hasDs = false;
                     for (let k = blockStart; k <= blockEnd; k++) {

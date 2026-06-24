@@ -3,7 +3,7 @@
 We successfully stress-tested `devsplain` by generating 66 massive production-scale files across 22 different programming languages, and successfully executed the full E2E pipeline.
 
 ## System Performance & Load Testing
-The test script ran over **5,000 lines of generated code** through the CLI. We executed the entire pipeline using the **Groq Free Tier API**, specifically the `llama-3.3-70b-versatile` model. Due to the high volume of parallel requests, we intentionally triggered rate limits on both the Gemini and Groq APIs (`429 Too Many Requests`). 
+The test script ran over **1,500 lines of generated code** through the CLI. We executed the entire pipeline using the **Groq Free Tier API**, specifically the `llama-3.3-70b-versatile` model. Due to the high volume of parallel requests, we intentionally triggered rate limits on both the Gemini and Groq APIs (`429 Too Many Requests`). 
 
 **Finding:** The CLI and the E2E script's exponential backoff mechanisms handled these rate limits perfectly. The scripts correctly paused threads, allowed token buckets to refill, and automatically resumed execution without dropping a single file or corrupting data.
 
@@ -34,7 +34,7 @@ We analyzed the average comment-to-line ratios across all 66 production algorith
 ### 4. Code Base Mutators
 - `--force`: Successfully bypassed the safety mechanisms and overrode dirty-file protection locks across all 66 files.
 - `--clean`: Successfully stripped thousands of AI-generated `[ds]` comments across all languages, while leaving standard manual developer comments perfectly intact.
-- `--prune`: Aggressively stripped all comments (both manual and AI) from the codebase perfectly, turning 5,000 lines of heavily-commented dev code into pure minified production blocks.
+- `--prune`: Aggressively stripped all comments (both manual and AI) from the codebase perfectly, turning 1,500 lines of heavily-commented dev code into pure minified production blocks.
 
 ## Conclusion
 The `devsplain` dual-sync lexing engine and Git interception layers are incredibly stable, highly concurrent, and **fully production-ready.**
@@ -51,4 +51,4 @@ You can run this exact test suite locally to verify the engine on your own machi
    ```bash
    node tests/run-e2e.js
    ```
-4. Sit back and watch it process 5,000+ lines of code!
+4. Sit back and watch it process 1,500+ lines of code!

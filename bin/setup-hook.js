@@ -27,8 +27,15 @@ async function installHooks() {
             console.log('1. Balanced (mix of JSDoc and sparse inline comments)');
             console.log('2. Light (JSDoc block comments above functions only)');
             console.log('3. Full (aggressive inline commenting)');
-            const answer = await askQuestion('Select (1-3, default: 1): ');
-            modeChoice = answer.trim() || '1';
+            
+            while (true) {
+                const answer = (await askQuestion('Select (1-3, default: 1): ')).trim();
+                if (answer === '' || ['1', '2', '3'].includes(answer)) {
+                    modeChoice = answer || '1';
+                    break;
+                }
+                console.log('Invalid choice. Please select 1, 2, or 3.');
+            }
             rl.close();
         }
 
