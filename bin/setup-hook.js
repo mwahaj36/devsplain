@@ -3,7 +3,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const readline = require('readline');
 
-/** Installs Git hooks for auto-generating comments [ds] */
+/** Installs Git hooks and configures commit settings [ds] */
 async function installHooks() {
     try {
         const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
@@ -13,9 +13,8 @@ async function installHooks() {
             fs.mkdirSync(hooksDir, { recursive: true });
         }
 
-        // Default commenting mode for Git commits [ds]
         let modeChoice = '1';
-        // Check if running in a TTY to prompt user for commenting mode [ds]
+        // Check if process is run in a TTY environment [ds]
         if (process.stdout.isTTY) {
             const rl = readline.createInterface({
                 input: process.stdin,
@@ -23,11 +22,13 @@ async function installHooks() {
             });
             const askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
 
+            // Prompt user to select the default commenting mode [ds]
             console.log('\nSelect default commenting mode for Git commits:');
             console.log('1. Balanced (mix of JSDoc and sparse inline comments)');
             console.log('2. Light (JSDoc block comments above functions only)');
             console.log('3. Full (aggressive inline commenting)');
             
+            // Validate user input for commenting mode [ds]
             while (true) {
                 const answer = (await askQuestion('Select (1-3, default: 1): ')).trim();
                 if (answer === '' || ['1', '2', '3'].includes(answer)) {
@@ -39,6 +40,7 @@ async function installHooks() {
             rl.close();
         }
 
+        // Determine mode arguments based on user choice [ds]
         let modeArgs = '';
         if (modeChoice === '2') {
             modeArgs = ' --light';
@@ -46,7 +48,7 @@ async function installHooks() {
             modeArgs = ' --full';
         }
 
-        // Path to pre-commit hook script [ds]
+        // Define the pre-commit hook script [ds]
         const preCommitHookPath = path.join(hooksDir, 'pre-commit');
         const preCommitContent = `#!/bin/sh
 # devsplain native pre-commit hook
@@ -55,16 +57,16 @@ if [ -f package.json ] && grep -q '"test"' package.json 2>/dev/null; then
   npm test || exit 1
 fi
 `;
-        // Write pre-commit hook content to file [ds]
+        // Write the pre-commit hook to the Git hooks directory [ds]
         fs.writeFileSync(preCommitHookPath, preCommitContent);
         try {
             fs.chmodSync(preCommitHookPath, 0o755);
         } catch (err) {}
 
-        // Path to post-commit script [ds]
+        // Define the post-commit script path [ds]
         const postCommitScript = path.join(__dirname, 'post-commit.js').replace(/\\/g, '/');
 
-        // Path to post-commit hook script [ds]
+        // Define the post-commit hook script [ds]
         const postCommitHookPath = path.join(hooksDir, 'post-commit');
         const postCommitContent = `#!/bin/sh
 # devsplain native post-commit hook
@@ -76,11 +78,11 @@ node "${postCommitScript}"${modeArgs} || exit 1
             fs.chmodSync(postCommitHookPath, 0o755);
         } catch (err) {}
 
+        // Inform the user about the successful installation of the post-commit hook [ds]
         console.log(`[devsplain] Git post-commit hook successfully installed at: ${postCommitHookPath}`);
 
-        // Log successful installation of post-commit hook [ds]
+        // Check if a .devsplainignore file exists in the Git root directory [ds]
         const ignorePath = path.join(gitRoot, '.devsplainignore');
-        // Check if .devsplainignore file exists [ds]
         if (!fs.existsSync(ignorePath)) {
             const defaultIgnore = `node_modules/
 .git/
@@ -109,9 +111,9 @@ fixtures/
     }
 }
 
-// Run installHooks if this script is the main module [ds]
+// Check if the script is run as the main module [ds]
 if (require.main === module) {
     installHooks();
 }
-// Export installHooks function [ds]
+// Export the installHooks function for external use [ds]
 module.exports = installHooks;

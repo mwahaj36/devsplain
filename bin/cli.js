@@ -10,7 +10,7 @@ const { execSync } = require('child_process');
 let rl;
 let askQuestion;
 
-/** Checks if the Git working tree is dirty [ds] */
+/** Checks if the Git repository is dirty [ds] */
 function isGitDirty() {
     try {
         const gitDir = execSync('git rev-parse --is-inside-work-tree', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
@@ -23,7 +23,7 @@ function isGitDirty() {
     return false;
 }
 
-/** Checks if a line is inside a string literal [ds] */
+/** Checks if a line of code is inside a string [ds] */
 function isLineInsideString(lines, targetLineIndex, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
@@ -65,6 +65,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                 } else if (isHTML) {
                     if (line.slice(j, j + 4) === '<!--') {
                         inBlockHTML = true;
+                        // Check if current character is a backtick [ds]
                         j += 4;
                         continue;
                     }
@@ -124,6 +125,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                 }
                 }
                 if (!inBacktick) {
+                    // Check if current character is a double quote [ds]
                     if (line[j] === '"' && !inSingle) {
                         let escaped = false;
                         let k = j - 1;
@@ -158,7 +160,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
     return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble;
 }
 
-/** Analyzes comments in a list of lines [ds] */
+/** Analyzes comments in a given list of lines [ds] */
 function analyzeComments(lines, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
@@ -279,6 +281,7 @@ function analyzeComments(lines, ext = '') {
                             inDouble = !inDouble;
                         }
                     }
+                    // Check if current character is a single quote [ds]
                     else if (line[j] === "'" && !inDouble) {
                         let escaped = false;
                         let k = j - 1;
@@ -320,7 +323,7 @@ function analyzeComments(lines, ext = '') {
     return analysis;
 }
 
-/** Splices comments into a list of lines [ds] */
+/** Splices comments into the given data [ds] */
 function spliceComments(data, comments, mode = 'default', ext = '') {
     const hasCRLF = data.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
@@ -369,6 +372,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
                 continue;
             }
 
+            // Prune mode: remove all comments from the line [ds]
             if (mode === 'prune') {
                 if (lineAnalysis.isPureComment) {
                     finalDeletions.add(lineNum);
@@ -443,6 +447,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
             const indentation = indentMatch ? indentMatch[1] : '';
 
             const commentLines = c.comment.split(/\r?\n/).map((line, idx) => {
+                // Add the comment to the list of comments [ds]
                 let trimmed = line.trimStart();
                 if (!trimmed) return '';
 
@@ -474,6 +479,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     const filteredText = filtered.map(line => line.text);
     const filteredIndices = filtered.map(line => line.originalIndex);
 
+    // Check if the filtered text is equal to the original text [ds]
     const textEqual = filteredText.every((text, idx) => {
         const origIdx = filteredIndices[idx];
         const originalLine = originalLines[origIdx];
@@ -512,7 +518,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     return annotated.map(line => line.text).join(lineEnding);
 }
 
-/** Runs the CLI application [ds] */
+/** Runs the CLI interface [ds] */
 async function runCLI() {
     rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
@@ -656,8 +662,8 @@ Options:
     ];
     const allIgnored = [...defaultIgnoredFolders, ...userIgnorePatterns];
 
+    /** Checks if a given path is ignored [ds] */
     function isPathIgnored(targetPath) {
-        // Checks if a path is ignored [ds]
         const filename = path.basename(targetPath);
         for (const pattern of allIgnored) {
             const cleanPattern = pattern.replace(/\/$/, '').replace(/\\$/, '');
@@ -667,7 +673,7 @@ Options:
         return false;
     }
 
-    /** Processes a path, scanning directories or analyzing files [ds] */
+    /** Processes a given path [ds] */
     async function processPath(targetPath) {
         const stats = fs.statSync(targetPath);
 
