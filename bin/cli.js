@@ -27,6 +27,9 @@ function isGitDirty() {
 function isLineInsideString(lines, targetLineIndex, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
+    const isRustOrSwift = ['.rs', '.swift'].includes(ext.toLowerCase());
+    const isCpp = ['.cpp', '.cc', '.cxx', '.c', '.h', '.hpp'].includes(ext.toLowerCase());
+    const isJS = ['.js', '.jsx', '.ts', '.tsx'].includes(ext.toLowerCase());
     let inBacktick = false;
     let inTripleDouble = false;
     let inTripleSingle = false;
@@ -34,15 +37,51 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
     let inDouble = false;
     let inBlockJS = false;
     let inBlockHTML = false;
+    let blockDepthJS = 0;
+    let inCppRawString = false;
+    let cppRawDelimiter = '';
+    let inRegex = false;
     for (let i = 0; i < targetLineIndex; i++) {
         const line = lines[i];
         let j = 0;
         while (j < line.length) {
             if (inBlockJS) {
-                if (line.slice(j, j + 2) === '*/') {
-                    inBlockJS = false;
+                if (line.slice(j, j + 2) === '/*') {
+                    if (isRustOrSwift) blockDepthJS++;
                     j += 2;
                     continue;
+                }
+                if (line.slice(j, j + 2) === '*/') {
+                    if (isRustOrSwift && blockDepthJS > 1) {
+                        blockDepthJS--;
+                    } else {
+                        inBlockJS = false;
+                        blockDepthJS = 0;
+                    }
+                    j += 2;
+                    continue;
+                }
+                j++;
+                continue;
+            }
+            if (inCppRawString) {
+                if (line.slice(j, j + 2 + cppRawDelimiter.length) === ')' + cppRawDelimiter + '"') {
+                    inCppRawString = false;
+                    j += 2 + cppRawDelimiter.length;
+                    continue;
+                }
+                j++;
+                continue;
+            }
+            if (inRegex) {
+                let escaped = false;
+                let k = j - 1;
+                while (k >= 0 && line[k] === '\\') {
+                    escaped = !escaped;
+                    k--;
+                }
+                if (line[j] === '/' && !escaped) {
+                    inRegex = false;
                 }
                 j++;
                 continue;
@@ -83,12 +122,45 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                     }
                     if (line.slice(j, j + 2) === '/*') {
                         inBlockJS = true;
+                        blockDepthJS = 1;
                         j += 2;
                         continue;
                     }
                     const isShellOrRuby = ['.sh', '.rb', '.php'].includes(ext.toLowerCase());
                     if (isShellOrRuby && line[j] === '#') {
                         break; // Ignore rest of line
+                    }
+                    if (isCpp && line[j] === 'R' && line[j+1] === '"') {
+                        const match = line.slice(j).match(/^R"([^()\\\s]{0,16})\(/);
+                        if (match) {
+                            cppRawDelimiter = match[1];
+                            inCppRawString = true;
+                            j += match[0].length;
+                            continue;
+                        }
+                    }
+                    if (isJS && line[j] === '/') {
+                        let k = j - 1;
+                        while (k >= 0 && /\s/.test(line[k])) k--;
+                        let isRegex = false;
+                        if (k < 0) {
+                            isRegex = true;
+                        } else {
+                            const prevChar = line[k];
+                            if (/[=({\[:,;!+*&|?<>-]/.test(prevChar)) {
+                                isRegex = true;
+                            } else {
+                                const prefix = line.slice(0, k + 1);
+                                if (/(?:return|typeof|yield|await|throw)\s*$/.test(prefix)) {
+                                    isRegex = true;
+                                }
+                            }
+                        }
+                        if (isRegex) {
+                            inRegex = true;
+                            j++;
+                            continue;
+                        }
                     }
                 }
             }
@@ -157,13 +229,16 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
             inDouble = false;
         }
     }
-    return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble;
+    return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble || inCppRawString || inRegex;
 }
 
 /** Analyzes comments in a given list of lines [ds] */
 function analyzeComments(lines, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
+    const isRustOrSwift = ['.rs', '.swift'].includes(ext.toLowerCase());
+    const isCpp = ['.cpp', '.cc', '.cxx', '.c', '.h', '.hpp'].includes(ext.toLowerCase());
+    const isJS = ['.js', '.jsx', '.ts', '.tsx'].includes(ext.toLowerCase());
     const analysis = [];
     let inBacktick = false;
     let inTripleDouble = false;
@@ -172,6 +247,10 @@ function analyzeComments(lines, ext = '') {
     let inDouble = false;
     let inBlockJS = false;
     let inBlockHTML = false;
+    let blockDepthJS = 0;
+    let inCppRawString = false;
+    let cppRawDelimiter = '';
+    let inRegex = false;
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         let commentStartIndex = -1;
@@ -179,10 +258,42 @@ function analyzeComments(lines, ext = '') {
         let j = 0;
         while (j < line.length) {
             if (inBlockJS) {
-                if (line.slice(j, j + 2) === '*/') {
-                    inBlockJS = false;
+                if (line.slice(j, j + 2) === '/*') {
+                    if (isRustOrSwift) blockDepthJS++;
                     j += 2;
                     continue;
+                }
+                if (line.slice(j, j + 2) === '*/') {
+                    if (isRustOrSwift && blockDepthJS > 1) {
+                        blockDepthJS--;
+                    } else {
+                        inBlockJS = false;
+                        blockDepthJS = 0;
+                    }
+                    j += 2;
+                    continue;
+                }
+                j++;
+                continue;
+            }
+            if (inCppRawString) {
+                if (line.slice(j, j + 2 + cppRawDelimiter.length) === ')' + cppRawDelimiter + '"') {
+                    inCppRawString = false;
+                    j += 2 + cppRawDelimiter.length;
+                    continue;
+                }
+                j++;
+                continue;
+            }
+            if (inRegex) {
+                let escaped = false;
+                let k = j - 1;
+                while (k >= 0 && line[k] === '\\') {
+                    escaped = !escaped;
+                    k--;
+                }
+                if (line[j] === '/' && !escaped) {
+                    inRegex = false;
                 }
                 j++;
                 continue;
@@ -227,6 +338,7 @@ function analyzeComments(lines, ext = '') {
                     if (line.slice(j, j + 2) === '/*') {
                         commentStartIndex = j;
                         inBlockJS = true;
+                        blockDepthJS = 1;
                         j += 2;
                         continue;
                     }
@@ -234,6 +346,38 @@ function analyzeComments(lines, ext = '') {
                     if (isShellOrRuby && line[j] === '#') {
                         commentStartIndex = j;
                         break;
+                    }
+                    if (isCpp && line[j] === 'R' && line[j+1] === '"') {
+                        const match = line.slice(j).match(/^R"([^()\\\s]{0,16})\(/);
+                        if (match) {
+                            cppRawDelimiter = match[1];
+                            inCppRawString = true;
+                            j += match[0].length;
+                            continue;
+                        }
+                    }
+                    if (isJS && line[j] === '/') {
+                        let k = j - 1;
+                        while (k >= 0 && /\s/.test(line[k])) k--;
+                        let isRegex = false;
+                        if (k < 0) {
+                            isRegex = true;
+                        } else {
+                            const prevChar = line[k];
+                            if (/[=({\[:,;!+*&|?<>-]/.test(prevChar)) {
+                                isRegex = true;
+                            } else {
+                                const prefix = line.slice(0, k + 1);
+                                if (/(?:return|typeof|yield|await|throw)\s*$/.test(prefix)) {
+                                    isRegex = true;
+                                }
+                            }
+                        }
+                        if (isRegex) {
+                            inRegex = true;
+                            j++;
+                            continue;
+                        }
                     }
                 }
             }
