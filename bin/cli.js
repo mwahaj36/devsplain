@@ -10,7 +10,7 @@ const { execSync } = require('child_process');
 let rl;
 let askQuestion;
 
-/** Checks if the Git repository has uncommitted changes [ds] */
+// Checks if the Git working tree is dirty [ds]
 function isGitDirty() {
     try {
         const gitDir = execSync('git rev-parse --is-inside-work-tree', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
@@ -23,7 +23,7 @@ function isGitDirty() {
     return false;
 }
 
-/** Checks if a line of code is inside a string literal [ds] */
+// Checks if a line of code is inside a string literal [ds]
 function isLineInsideString(lines, targetLineIndex, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
@@ -236,7 +236,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
     return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble || inCppRawString || inRegex;
 }
 
-/** Analyzes the comments in a given set of code lines [ds] */
+// Analyzes comments in a given set of code lines [ds]
 function analyzeComments(lines, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
@@ -477,7 +477,7 @@ function analyzeComments(lines, ext = '') {
     return analysis;
 }
 
-/** Splices comments into the provided code data [ds] */
+// Splices comments into the given code data [ds]
 function spliceComments(data, comments, mode = 'default', ext = '') {
     const hasCRLF = data.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
@@ -669,7 +669,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     return annotated.map(line => line.text).join(lineEnding);
 }
 
-/** Runs the CLI application [ds] */
+// Runs the CLI interface for the application [ds]
 async function runCLI() {
     rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
@@ -813,7 +813,6 @@ Options:
     ];
     const allIgnored = [...defaultIgnoredFolders, ...userIgnorePatterns];
 
-    /** Checks if a path is ignored based on the ignore patterns [ds] */
     function isPathIgnored(targetPath) {
         const filename = path.basename(targetPath);
         for (const pattern of allIgnored) {
@@ -824,7 +823,7 @@ Options:
         return false;
     }
 
-    /** Processes a given path, which can be a file or directory [ds] */
+    // Processes a given file path, either a file or directory [ds]
     async function processPath(targetPath) {
         const stats = fs.statSync(targetPath);
 
@@ -882,6 +881,7 @@ Options:
                         fs.renameSync(tempPath, targetPath);
                         console.log(` Successfully saved ${targetPath}`);
                     } else {
+                        // Asks the user if they want to save the commented code to a file [ds]
                         console.log(` Skipped ${targetPath}`);
                     }
                 } else {
@@ -914,6 +914,7 @@ Options:
     rl.close();
 }
 
+// Starts the CLI application if this script is run directly [ds]
 if (require.main === module) {
     runCLI().catch(err => {
         console.error(err);
