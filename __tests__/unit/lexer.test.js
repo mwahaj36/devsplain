@@ -146,6 +146,29 @@ describe('Lexer Edge Cases', () => {
             code: '/* outer /* inner */ */\n// target',
             comments: [{ line: 2, comment: '// comment' }],
             expected: '/* outer /* inner */ */\n// comment [ds]\n// target'
+        },
+
+        // --- Shell / Ruby ---
+        {
+            name: 'Shell: // and /* should not be treated as comments',
+            ext: '.sh',
+            code: 'cd //tmp\nrm -rf /*\ntarget',
+            comments: [{ line: 3, comment: '# target comment' }],
+            expected: 'cd //tmp\nrm -rf /*\n# target comment [ds]\ntarget'
+        },
+        {
+            name: 'Ruby: // and /* should not be treated as comments',
+            ext: '.rb',
+            code: 'path = "//etc"\nregex = /*/\ntarget',
+            comments: [{ line: 3, comment: '# target comment' }],
+            expected: 'path = "//etc"\nregex = /*/\n# target comment [ds]\ntarget'
+        },
+        {
+            name: 'PHP: # and // and /* should all be treated as comments',
+            ext: '.php',
+            code: '# comment\n// comment\n/* comment */\ntarget',
+            comments: [{ line: 4, comment: '// target comment' }],
+            expected: '# comment\n// comment\n/* comment */\n// target comment [ds]\ntarget'
         }
     ];
 

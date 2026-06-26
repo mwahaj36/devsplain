@@ -116,49 +116,55 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                         break; // Ignore rest of line
                     }
                 } else {
-                    if (line.slice(j, j + 2) === '//') {
-                        break; // Ignore rest of line
-                    }
-                    if (line.slice(j, j + 2) === '/*') {
-                        inBlockJS = true;
-                        blockDepthJS = 1;
-                        j += 2;
-                        continue;
-                    }
-                    const isShellOrRuby = ['.sh', '.rb', '.php'].includes(ext.toLowerCase());
-                    if (isShellOrRuby && line[j] === '#') {
-                        break; // Ignore rest of line
-                    }
-                    if (isCpp && line[j] === 'R' && line[j+1] === '"') {
-                        const match = line.slice(j).match(/^R"([^()\\\s]{0,16})\(/);
-                        if (match) {
-                            cppRawDelimiter = match[1];
-                            inCppRawString = true;
-                            j += match[0].length;
+                    const isShellOrRuby = ['.sh', '.rb'].includes(ext.toLowerCase());
+                    if (isShellOrRuby) {
+                        if (line[j] === '#') {
+                            break; // Ignore rest of line
+                        }
+                    } else {
+                        if (line.slice(j, j + 2) === '//') {
+                            break; // Ignore rest of line
+                        }
+                        if (line.slice(j, j + 2) === '/*') {
+                            inBlockJS = true;
+                            blockDepthJS = 1;
+                            j += 2;
                             continue;
                         }
-                    }
-                    if (isJS && line[j] === '/') {
-                        let k = j - 1;
-                        while (k >= 0 && /\s/.test(line[k])) k--;
-                        let isRegex = false;
-                        if (k < 0) {
-                            isRegex = true;
-                        } else {
-                            const prevChar = line[k];
-                            if (/[=({\[:,;!+*&|?<>-]/.test(prevChar)) {
-                                isRegex = true;
-                            } else {
-                                const prefix = line.slice(0, k + 1);
-                                if (/(?:return|typeof|yield|await|throw)\s*$/.test(prefix)) {
-                                    isRegex = true;
-                                }
+                        if (ext.toLowerCase() === '.php' && line[j] === '#') {
+                            break; // Ignore rest of line
+                        }
+                        if (isCpp && line[j] === 'R' && line[j+1] === '"') {
+                            const match = line.slice(j).match(/^R"([^()\\\s]{0,16})\(/);
+                            if (match) {
+                                cppRawDelimiter = match[1];
+                                inCppRawString = true;
+                                j += match[0].length;
+                                continue;
                             }
                         }
-                        if (isRegex) {
-                            inRegex = true;
-                            j++;
-                            continue;
+                        if (isJS && line[j] === '/') {
+                            let k = j - 1;
+                            while (k >= 0 && /\s/.test(line[k])) k--;
+                            let isRegex = false;
+                            if (k < 0) {
+                                isRegex = true;
+                            } else {
+                                const prevChar = line[k];
+                                if (/[=({\[:,;!+*&|?<>-]/.test(prevChar)) {
+                                    isRegex = true;
+                                } else {
+                                    const prefix = line.slice(0, k + 1);
+                                    if (/(?:return|typeof|yield|await|throw)\s*$/.test(prefix)) {
+                                        isRegex = true;
+                                    }
+                                }
+                            }
+                            if (isRegex) {
+                                inRegex = true;
+                                j++;
+                                continue;
+                            }
                         }
                     }
                 }
@@ -329,52 +335,59 @@ function analyzeComments(lines, ext = '') {
                         break;
                     }
                 } else {
-                    if (line.slice(j, j + 2) === '//') {
-                        commentStartIndex = j;
-                        break;
-                    }
-                    if (line.slice(j, j + 2) === '/*') {
-                        commentStartIndex = j;
-                        inBlockJS = true;
-                        blockDepthJS = 1;
-                        j += 2;
-                        continue;
-                    }
-                    const isShellOrRuby = ['.sh', '.rb', '.php'].includes(ext.toLowerCase());
-                    if (isShellOrRuby && line[j] === '#') {
-                        commentStartIndex = j;
-                        break;
-                    }
-                    if (isCpp && line[j] === 'R' && line[j+1] === '"') {
-                        const match = line.slice(j).match(/^R"([^()\\\s]{0,16})\(/);
-                        if (match) {
-                            cppRawDelimiter = match[1];
-                            inCppRawString = true;
-                            j += match[0].length;
+                    const isShellOrRuby = ['.sh', '.rb'].includes(ext.toLowerCase());
+                    if (isShellOrRuby) {
+                        if (line[j] === '#') {
+                            commentStartIndex = j;
+                            break;
+                        }
+                    } else {
+                        if (line.slice(j, j + 2) === '//') {
+                            commentStartIndex = j;
+                            break;
+                        }
+                        if (line.slice(j, j + 2) === '/*') {
+                            commentStartIndex = j;
+                            inBlockJS = true;
+                            blockDepthJS = 1;
+                            j += 2;
                             continue;
                         }
-                    }
-                    if (isJS && line[j] === '/') {
-                        let k = j - 1;
-                        while (k >= 0 && /\s/.test(line[k])) k--;
-                        let isRegex = false;
-                        if (k < 0) {
-                            isRegex = true;
-                        } else {
-                            const prevChar = line[k];
-                            if (/[=({\[:,;!+*&|?<>-]/.test(prevChar)) {
-                                isRegex = true;
-                            } else {
-                                const prefix = line.slice(0, k + 1);
-                                if (/(?:return|typeof|yield|await|throw)\s*$/.test(prefix)) {
-                                    isRegex = true;
-                                }
+                        if (ext.toLowerCase() === '.php' && line[j] === '#') {
+                            commentStartIndex = j;
+                            break;
+                        }
+                        if (isCpp && line[j] === 'R' && line[j+1] === '"') {
+                            const match = line.slice(j).match(/^R"([^()\\\s]{0,16})\(/);
+                            if (match) {
+                                cppRawDelimiter = match[1];
+                                inCppRawString = true;
+                                j += match[0].length;
+                                continue;
                             }
                         }
-                        if (isRegex) {
-                            inRegex = true;
-                            j++;
-                            continue;
+                        if (isJS && line[j] === '/') {
+                            let k = j - 1;
+                            while (k >= 0 && /\s/.test(line[k])) k--;
+                            let isRegex = false;
+                            if (k < 0) {
+                                isRegex = true;
+                            } else {
+                                const prevChar = line[k];
+                                if (/[=({\[:,;!+*&|?<>-]/.test(prevChar)) {
+                                    isRegex = true;
+                                } else {
+                                    const prefix = line.slice(0, k + 1);
+                                    if (/(?:return|typeof|yield|await|throw)\s*$/.test(prefix)) {
+                                        isRegex = true;
+                                    }
+                                }
+                            }
+                            if (isRegex) {
+                                inRegex = true;
+                                j++;
+                                continue;
+                            }
                         }
                     }
                 }
