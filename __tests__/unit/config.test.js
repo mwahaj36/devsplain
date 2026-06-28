@@ -19,7 +19,8 @@ describe('Config Module (getConfig)', () => {
             provider: 'groq',
             apiKey: 'super-secret-test-key',
             model: 'llama-test-model',
-            baseUrl: 'https://api.groq.com/openai'
+            baseUrl: 'https://api.groq.com/openai',
+            autoPrune: false
         };
         fs.readFileSync.mockReturnValue(JSON.stringify(fakeConfig));
 
@@ -31,7 +32,7 @@ describe('Config Module (getConfig)', () => {
     });
 
     test('should run configuration wizard when forceWizard is true', async () => {
-        fs.existsSync.mockReturnValue(true);
+        fs.existsSync.mockReturnValue(false);
         fs.writeFileSync = jest.fn();
 
         const mockRl = {
@@ -62,7 +63,17 @@ describe('Config Module (getConfig)', () => {
         expect(mockRl.close).toHaveBeenCalled();
         expect(fs.writeFileSync).toHaveBeenCalledWith(
             expect.any(String),
-            JSON.stringify(config, null, 2)
+            JSON.stringify({
+                activeProvider: 'gemini',
+                providers: {
+                    gemini: {
+                        apiKey: 'gemini-key',
+                        model: 'gemini-2.0-flash',
+                        baseUrl: null,
+                        autoPrune: true
+                    }
+                }
+            }, null, 2)
         );
     });
 });
