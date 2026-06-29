@@ -530,7 +530,23 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
                 if (lineAnalysis.isPureComment) {
                     finalDeletions.add(lineNum);
                 } else if (lineAnalysis.commentStartIndex !== -1) {
-                    annotated[i].text = lineStr.slice(0, lineAnalysis.commentStartIndex).trimEnd();
+                    const idx = lineAnalysis.commentStartIndex;
+                    const remainder = lineStr.slice(idx);
+                    let newText = lineStr.slice(0, idx).trimEnd();
+                    
+                    if (remainder.startsWith('/*')) {
+                        const endIdx = remainder.indexOf('*/');
+                        if (endIdx !== -1) {
+                            newText = lineStr.slice(0, idx) + remainder.slice(endIdx + 2);
+                        }
+                    } else if (remainder.startsWith('<!--')) {
+                        const endIdx = remainder.indexOf('-->');
+                        if (endIdx !== -1) {
+                            newText = lineStr.slice(0, idx) + remainder.slice(endIdx + 3);
+                        }
+                    }
+                    
+                    annotated[i].text = newText.trimEnd();
                 }
             } else if (mode === 'clean') {
                 const isDsBlockLine = dsBlocks.has(lineNum);
@@ -542,7 +558,23 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
                     }
                 } else if (lineAnalysis.commentStartIndex !== -1) {
                     if (isDsBlockLine || hasDsInline) {
-                        annotated[i].text = lineStr.slice(0, lineAnalysis.commentStartIndex).trimEnd();
+                        const idx = lineAnalysis.commentStartIndex;
+                        const remainder = lineStr.slice(idx);
+                        let newText = lineStr.slice(0, idx).trimEnd();
+                        
+                        if (remainder.startsWith('/*')) {
+                            const endIdx = remainder.indexOf('*/');
+                            if (endIdx !== -1) {
+                                newText = lineStr.slice(0, idx) + remainder.slice(endIdx + 2);
+                            }
+                        } else if (remainder.startsWith('<!--')) {
+                            const endIdx = remainder.indexOf('-->');
+                            if (endIdx !== -1) {
+                                newText = lineStr.slice(0, idx) + remainder.slice(endIdx + 3);
+                            }
+                        }
+                        
+                        annotated[i].text = newText.trimEnd();
                     }
                 }
             }
@@ -643,7 +675,23 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
                 const isDsBlockLine = dsBlocks.has(origIdx + 1);
                 const hasDsInline = originalLine.includes('[ds]');
                 if (mode === 'prune' || (mode === 'clean' && (hasDsInline || isDsBlockLine))) {
-                    const expectedStripped = originalLine.slice(0, lineAnalysis.commentStartIndex).trimEnd();
+                    const idx = lineAnalysis.commentStartIndex;
+                    const remainder = originalLine.slice(idx);
+                    let expectedStripped = originalLine.slice(0, idx).trimEnd();
+                    
+                    if (remainder.startsWith('/*')) {
+                        const endIdx = remainder.indexOf('*/');
+                        if (endIdx !== -1) {
+                            expectedStripped = originalLine.slice(0, idx) + remainder.slice(endIdx + 2);
+                        }
+                    } else if (remainder.startsWith('<!--')) {
+                        const endIdx = remainder.indexOf('-->');
+                        if (endIdx !== -1) {
+                            expectedStripped = originalLine.slice(0, idx) + remainder.slice(endIdx + 3);
+                        }
+                    }
+                    expectedStripped = expectedStripped.trimEnd();
+
                     if (text === expectedStripped) {
                         return true;
                     }
