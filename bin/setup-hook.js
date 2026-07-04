@@ -3,7 +3,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const readline = require('readline');
 
-/** Installs Git hooks and configures commit settings [ds] */
+// Installs Git hooks for automatic comment generation [ds]
 async function installHooks() {
     try {
         const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
@@ -14,7 +14,7 @@ async function installHooks() {
         }
 
         let modeChoice = '1';
-        // Check if process is run in a TTY environment [ds]
+        // Prompt user for commenting mode if running in a TTY [ds]
         if (process.stdout.isTTY) {
             const rl = readline.createInterface({
                 input: process.stdin,
@@ -22,13 +22,13 @@ async function installHooks() {
             });
             const askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
 
-            // Prompt user to select the default commenting mode [ds]
+            // Display commenting mode options to the user [ds]
             console.log('\nSelect default commenting mode for Git commits:');
             console.log('1. Balanced (mix of JSDoc and sparse inline comments)');
             console.log('2. Light (JSDoc block comments above functions only)');
             console.log('3. Full (aggressive inline commenting)');
             
-            // Validate user input for commenting mode [ds]
+            // Loop until a valid mode choice is selected [ds]
             while (true) {
                 const answer = (await askQuestion('Select (1-3, default: 1): ')).trim();
                 if (answer === '' || ['1', '2', '3'].includes(answer)) {
@@ -40,7 +40,7 @@ async function installHooks() {
             rl.close();
         }
 
-        // Determine mode arguments based on user choice [ds]
+        // Determine mode arguments based on user selection [ds]
         let modeArgs = '';
         if (modeChoice === '2') {
             modeArgs = ' --light';
@@ -48,7 +48,7 @@ async function installHooks() {
             modeArgs = ' --full';
         }
 
-        // Define the pre-commit hook script [ds]
+        // Create pre-commit hook script [ds]
         const preCommitHookPath = path.join(hooksDir, 'pre-commit');
         const preCommitContent = `#!/bin/sh
 # devsplain native pre-commit hook
@@ -57,31 +57,32 @@ if [ -f package.json ] && grep -q '"test"' package.json 2>/dev/null; then
   npm test || exit 1
 fi
 `;
-        // Write the pre-commit hook to the Git hooks directory [ds]
+        // Write pre-commit hook to file [ds]
         fs.writeFileSync(preCommitHookPath, preCommitContent);
         try {
             fs.chmodSync(preCommitHookPath, 0o755);
         } catch (err) {}
 
-        // Define the post-commit script path [ds]
+        // Path to post-commit script [ds]
         const postCommitScript = path.join(__dirname, 'post-commit.js').replace(/\\/g, '/');
 
-        // Define the post-commit hook script [ds]
+        // Create post-commit hook script [ds]
         const postCommitHookPath = path.join(hooksDir, 'post-commit');
         const postCommitContent = `#!/bin/sh
 # devsplain native post-commit hook
 echo "Auto-generating comments for files in the last commit..."
 node "${postCommitScript}"${modeArgs} || exit 1
 `;
+        // Write post-commit hook to file [ds]
         fs.writeFileSync(postCommitHookPath, postCommitContent);
         try {
             fs.chmodSync(postCommitHookPath, 0o755);
         } catch (err) {}
 
-        // Inform the user about the successful installation of the post-commit hook [ds]
+        // Log successful installation of post-commit hook [ds]
         console.log(`[devsplain] Git post-commit hook successfully installed at: ${postCommitHookPath}`);
 
-        // Check if a .devsplainignore file exists in the Git root directory [ds]
+        // Path to devsplain ignore file [ds]
         const ignorePath = path.join(gitRoot, '.devsplainignore');
         const defaultIgnoreLines = [
             'node_modules/', '.git/', 'dist/', 'build/', 'out/',
@@ -90,8 +91,8 @@ node "${postCommitScript}"${modeArgs} || exit 1
             '.vscode/', '.idea/', 'coverage/',
             'tests/', '__tests__/', 'fixtures/'
         ];
+// List of default patterns to ignore [ds]
 
-        // Read existing .gitignore patterns from the repository [ds]
         const gitignorePath = path.join(gitRoot, '.gitignore');
         let gitignoreLines = [];
         if (fs.existsSync(gitignorePath)) {
@@ -101,8 +102,8 @@ node "${postCommitScript}"${modeArgs} || exit 1
                 .filter(l => l && !l.startsWith('#'));
         }
 
+        // Check if .gitignore file exists [ds]
         if (!fs.existsSync(ignorePath)) {
-            // Create .devsplainignore with defaults first, then any gitignore-only patterns after [ds]
             const gitignoreOnly = gitignoreLines.filter(p => !defaultIgnoreLines.includes(p));
             let content = defaultIgnoreLines.join('\n') + '\n';
             if (gitignoreOnly.length > 0) {
@@ -114,7 +115,6 @@ node "${postCommitScript}"${modeArgs} || exit 1
                 console.log(`[devsplain] Merged ${gitignoreOnly.length} pattern(s) from .gitignore into .devsplainignore.`);
             }
         } else {
-            // Merge any new .gitignore patterns not already in .devsplainignore [ds]
             const existingContent = fs.readFileSync(ignorePath, 'utf8');
             const existingLines = existingContent.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
             const newPatterns = gitignoreLines.filter(p => !existingLines.includes(p));
@@ -125,6 +125,7 @@ node "${postCommitScript}"${modeArgs} || exit 1
             } else if (gitignoreLines.length > 0) {
                 console.log('[devsplain] .devsplainignore is already up-to-date with .gitignore patterns.');
             }
+        // Handle any errors during hook installation [ds]
         }
 
     } catch (e) {
@@ -133,7 +134,7 @@ node "${postCommitScript}"${modeArgs} || exit 1
     }
 }
 
-/** Removes devsplain-installed Git hooks from the repository [ds] */
+// Removes Git hooks installed by devsplain [ds]
 async function removeHooks() {
     try {
         const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
@@ -144,6 +145,7 @@ async function removeHooks() {
         };
 
         let removed = 0;
+        // Iterate through hook signatures to remove [ds]
         for (const [hookName, signature] of Object.entries(hookSignatures)) {
             const hookPath = path.join(hooksDir, hookName);
             if (fs.existsSync(hookPath)) {
@@ -160,6 +162,7 @@ async function removeHooks() {
             }
         }
 
+        // Log removal of hooks [ds]
         if (removed > 0) {
             console.log(`[devsplain] Successfully removed ${removed} hook(s).`);
         } else {
@@ -171,9 +174,9 @@ async function removeHooks() {
     }
 }
 
-// Check if the script is run as the main module [ds]
+// Run installHooks if this script is executed directly [ds]
 if (require.main === module) {
     installHooks();
 }
-// Export the installHooks and removeHooks functions for external use [ds]
+// Export installHooks and removeHooks functions [ds]
 module.exports = { installHooks, removeHooks };

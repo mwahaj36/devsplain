@@ -10,7 +10,7 @@ const { execSync } = require('child_process');
 let rl;
 let askQuestion;
 
-// Determines whether the current Git repository has uncommitted changes [ds]
+// Checks if the Git repository is dirty [ds]
 function isGitDirty() {
     try {
         const gitDir = execSync('git rev-parse --is-inside-work-tree', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
@@ -23,7 +23,7 @@ function isGitDirty() {
     return false;
 }
 
-// Checks whether a given line of code is inside a string literal [ds]
+// Determines if a line is inside a string literal [ds]
 function isLineInsideString(lines, targetLineIndex, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
@@ -236,7 +236,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
     return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble || inCppRawString || inRegex;
 }
 
-// Analyzes comments within a given list of code lines [ds]
+// Analyzes comments in the given lines of code [ds]
 function analyzeComments(lines, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
@@ -477,7 +477,7 @@ function analyzeComments(lines, ext = '') {
     return analysis;
 }
 
-// Inserts or removes comments from code based on the specified mode [ds]
+// Splices comments into the provided data [ds]
 function spliceComments(data, comments, mode = 'default', ext = '') {
     const hasCRLF = data.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
@@ -717,7 +717,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     return annotated.map(line => line.text).join(lineEnding);
 }
 
-// Runs the command-line interface for the application [ds]
+// Runs the CLI interface for the application [ds]
 async function runCLI() {
     rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
