@@ -744,6 +744,7 @@ Options:
   --base-url <url>    Override base URL for custom APIs
   --config            Force run the configuration setup wizard
   --setup-hook        Install Git pre-commit and post-commit hooks in repository
+  --remove-hook       Remove devsplain-installed Git hooks from repository
   --help, -h          Show this help message
   --version, -v       Show version information
 `);
@@ -767,8 +768,15 @@ Options:
 
     if (args.includes('--setup-hook')) {
         rl.close();
-        const installHooks = require('./setup-hook.js');
+        const { installHooks } = require('./setup-hook.js');
         await installHooks();
+        return;
+    }
+
+    if (args.includes('--remove-hook')) {
+        rl.close();
+        const { removeHooks } = require('./setup-hook.js');
+        await removeHooks();
         return;
     }
 

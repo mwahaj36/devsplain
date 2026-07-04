@@ -83,30 +83,90 @@ node "${postCommitScript}"${modeArgs} || exit 1
 
         // Check if a .devsplainignore file exists in the Git root directory [ds]
         const ignorePath = path.join(gitRoot, '.devsplainignore');
-        if (!fs.existsSync(ignorePath)) {
-            const defaultIgnore = `node_modules/
-.git/
-dist/
-build/
-out/
-.next/
-.nuxt/
-.svelte-kit/
-venv/
-env/
-.venv/
-.vscode/
-.idea/
-coverage/
-tests/
-__tests__/
-fixtures/
-`;
-            fs.writeFileSync(ignorePath, defaultIgnore);
-            console.log(`[devsplain] Created default .devsplainignore file at: ${ignorePath}`);
+        const defaultIgnoreLines = [
+            'node_modules/', '.git/', 'dist/', 'build/', 'out/',
+            '.next/', '.nuxt/', '.svelte-kit/',
+            'venv/', 'env/', '.venv/',
+            '.vscode/', '.idea/', 'coverage/',
+            'tests/', '__tests__/', 'fixtures/'
+        ];
+
+        // Read existing .gitignore patterns from the repository [ds]
+        const gitignorePath = path.join(gitRoot, '.gitignore');
+        let gitignoreLines = [];
+        if (fs.existsSync(gitignorePath)) {
+            const gitignoreContent = fs.readFileSync(gitignorePath, 'utf8');
+            gitignoreLines = gitignoreContent.split(/\r?\n/)
+                .map(l => l.trim())
+                .filter(l => l && !l.startsWith('#'));
         }
+
+        if (!fs.existsSync(ignorePath)) {
+            // Create .devsplainignore with defaults first, then any gitignore-only patterns after [ds]
+            const gitignoreOnly = gitignoreLines.filter(p => !defaultIgnoreLines.includes(p));
+            let content = defaultIgnoreLines.join('\n') + '\n';
+            if (gitignoreOnly.length > 0) {
+                content += '\n# From .gitignore\n' + gitignoreOnly.join('\n') + '\n';
+            }
+            fs.writeFileSync(ignorePath, content);
+            console.log(`[devsplain] Created .devsplainignore at: ${ignorePath}`);
+            if (gitignoreOnly.length > 0) {
+                console.log(`[devsplain] Merged ${gitignoreOnly.length} pattern(s) from .gitignore into .devsplainignore.`);
+            }
+        } else {
+            // Merge any new .gitignore patterns not already in .devsplainignore [ds]
+            const existingContent = fs.readFileSync(ignorePath, 'utf8');
+            const existingLines = existingContent.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+            const newPatterns = gitignoreLines.filter(p => !existingLines.includes(p));
+            if (newPatterns.length > 0) {
+                const appendContent = '\n# From .gitignore\n' + newPatterns.join('\n') + '\n';
+                fs.appendFileSync(ignorePath, appendContent);
+                console.log(`[devsplain] Merged ${newPatterns.length} new pattern(s) from .gitignore into .devsplainignore.`);
+            } else if (gitignoreLines.length > 0) {
+                console.log('[devsplain] .devsplainignore is already up-to-date with .gitignore patterns.');
+            }
+        }
+
     } catch (e) {
         console.warn('Warning: Could not set up Git hooks (not inside a git repository or git command missing).');
+        console.warn(e.message);
+    }
+}
+
+/** Removes devsplain-installed Git hooks from the repository [ds] */
+async function removeHooks() {
+    try {
+        const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
+        const hooksDir = path.join(gitDir, 'hooks');
+        const hookSignatures = {
+            'pre-commit': '# devsplain native pre-commit hook',
+            'post-commit': '# devsplain native post-commit hook'
+        };
+
+        let removed = 0;
+        for (const [hookName, signature] of Object.entries(hookSignatures)) {
+            const hookPath = path.join(hooksDir, hookName);
+            if (fs.existsSync(hookPath)) {
+                const content = fs.readFileSync(hookPath, 'utf8');
+                if (content.includes(signature)) {
+                    fs.unlinkSync(hookPath);
+                    console.log(`[devsplain] Removed ${hookName} hook at: ${hookPath}`);
+                    removed++;
+                } else {
+                    console.log(`[devsplain] Skipping ${hookName}: not installed by devsplain.`);
+                }
+            } else {
+                console.log(`[devsplain] No ${hookName} hook found at: ${hookPath}`);
+            }
+        }
+
+        if (removed > 0) {
+            console.log(`[devsplain] Successfully removed ${removed} hook(s).`);
+        } else {
+            console.log('[devsplain] No devsplain hooks were found to remove.');
+        }
+    } catch (e) {
+        console.warn('Warning: Could not remove Git hooks (not inside a git repository or git command missing).');
         console.warn(e.message);
     }
 }
@@ -115,5 +175,5 @@ fixtures/
 if (require.main === module) {
     installHooks();
 }
-// Export the installHooks function for external use [ds]
-module.exports = installHooks;
+// Export the installHooks and removeHooks functions for external use [ds]
+module.exports = { installHooks, removeHooks };
