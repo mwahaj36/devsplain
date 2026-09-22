@@ -169,6 +169,22 @@ describe('Lexer Edge Cases', () => {
             code: '# comment\n// comment\n/* comment */\ntarget',
             comments: [{ line: 4, comment: '// target comment' }],
             expected: '# comment\n// comment\n/* comment */\n// target comment [ds]\ntarget'
+        },
+        // --- SQL ---
+        {
+            name: 'SQL: Dash-dash comment support',
+            ext: '.sql',
+            code: 'SELECT * FROM users;\n-- target',
+            comments: [{ line: 2, comment: '-- fetch all users' }],
+            expected: 'SELECT * FROM users;\n-- fetch all users [ds]\n-- target'
+        },
+        // --- JS Regex reset ---
+        {
+            name: 'JS: Unclosed regex pattern does not leak across lines',
+            ext: '.js',
+            code: 'const div = a / b;\nconst str = "hello";\n// target',
+            comments: [{ line: 3, comment: '// comment' }],
+            expected: 'const div = a / b;\nconst str = "hello";\n// comment [ds]\n// target'
         }
     ];
 

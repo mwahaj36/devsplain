@@ -1,6 +1,7 @@
 node_modules/
-
+coverage/
 
 # E2E test temp directories
 tests/e2e_playground/
 tests/baseline/
+

@@ -193,6 +193,17 @@ describe('Line-Splicing Engine & Quote-Tracking', () => {
         }).not.toThrow();
     });
 
+    test('should throw error if injected line is non-comment executable code', () => {
+        const originalCode = 'const a = 1;\nconst b = 2;';
+        const maliciousComments = [
+            { line: 2, comment: '// comment\nevilCode();' }
+        ];
+
+        expect(() => {
+            spliceComments(originalCode, maliciousComments);
+        }).toThrow(/Safety Assertion Failed: Refused to insert non-comment code: "evilCode\(\);"/);
+    });
+
     test('golden regression test', () => {
         const code = 'class App {\n    start() {\n        console.log("Starting...");\n    }\n}';
         const comments = [

@@ -231,6 +231,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
         if (resetsAtLineEnd) {
             inSingle = false;
             inDouble = false;
+            inRegex = false;
         }
     }
     return inBacktick || inTripleDouble || inTripleSingle || inSingle || inDouble || inCppRawString || inRegex;
@@ -455,6 +456,7 @@ function analyzeComments(lines, ext = '') {
         if (resetsAtLineEnd) {
             inSingle = false;
             inDouble = false;
+            inRegex = false;
         }
         const isEntirelyInsideBlock = isInsideBlockStart && (inBlockJS || inBlockHTML || (commentStartIndex === -1));
         let isPureComment = false;
@@ -663,6 +665,33 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     const filteredText = filtered.map(line => line.text);
     const filteredIndices = filtered.map(line => line.originalIndex);
 
+    // Validate that all inserted lines (originalIndex === -1) are valid comments or empty lines [ds]
+    const insertedLines = annotated.filter(line => line.originalIndex === -1);
+    let inInsertedBlock = false;
+    for (const item of insertedLines) {
+        const trimmed = item.text.trim();
+        if (!trimmed) continue;
+        if (inInsertedBlock) {
+            if (trimmed.includes('*/') || trimmed.includes('-->')) {
+                inInsertedBlock = false;
+            }
+            continue;
+        }
+        const isValidComment = 
+            trimmed.startsWith('//') || 
+            trimmed.startsWith('/*') || 
+            trimmed.startsWith('*') || 
+            trimmed.startsWith('#') || 
+            trimmed.startsWith('<!--') || 
+            trimmed.startsWith('--');
+        if (!isValidComment) {
+            throw new Error(`Safety Assertion Failed: Refused to insert non-comment code: "${trimmed}"`);
+        }
+        if ((trimmed.startsWith('/*') && !trimmed.includes('*/')) || (trimmed.startsWith('<!--') && !trimmed.includes('-->'))) {
+            inInsertedBlock = true;
+        }
+    }
+
     const textEqual = filteredText.every((text, idx) => {
         const origIdx = filteredIndices[idx];
         const originalLine = originalLines[origIdx];
@@ -710,8 +739,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
     }
 
     if (!textEqual || !indicesSequential) {
-        console.error("\nSafety Assertion Failed: Spliced code does not match original code minus comments!");
-        process.exit(1);
+        throw new Error("Safety Assertion Failed: Spliced code does not match original code minus comments!");
     }
 
     return annotated.map(line => line.text).join(lineEnding);
@@ -818,7 +846,7 @@ Options:
     const hasOverwriteFlag = args.includes('--overwrite');
     const hasKeepFlag = args.includes('--keep');
 
-    if (process.env.NODE_ENV !== 'test' && isGitDirty() && !isForce) {
+    if (process.env.NODE_ENV !== 'test' && isGitDirty() && !isForce && !isDryRun) {
         console.error("Error: Git working tree is dirty. Please commit or stash your changes, or use --force to bypass this check.");
         rl.close();
         process.exit(1);
@@ -871,9 +899,10 @@ Options:
 
     function isPathIgnored(targetPath) {
         const filename = path.basename(targetPath);
+        const relPath = path.relative(process.cwd(), targetPath).replace(/\\/g, '/');
         for (const pattern of allIgnored) {
             const cleanPattern = pattern.replace(/\/$/, '').replace(/\\$/, '');
-            if (filename === cleanPattern) return true;
+            if (filename === cleanPattern || relPath === cleanPattern || relPath.startsWith(cleanPattern + '/')) return true;
             if (pattern.startsWith('*') && filename.endsWith(pattern.slice(1))) return true;
         }
         return false;
@@ -899,7 +928,7 @@ Options:
             const validExtensions = [
                 '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss', '.vue', '.svelte',
                 '.py', '.java', '.c', '.cpp', '.cs', '.go', '.rb', '.php', '.rs', 
-                '.swift', '.kt', '.dart', '.sh'
+                '.swift', '.kt', '.dart', '.sh', '.sql'
             ];
 
             if (!validExtensions.includes(ext)) {

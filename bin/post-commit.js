@@ -1,4 +1,4 @@
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { spliceComments } = require('./cli');
@@ -30,7 +30,7 @@ try {
     }
 
     // Get a list of changed files in the last commit [ds]
-    const changedFilesStr = execSync('git diff-tree --no-commit-id --name-only -r HEAD', { encoding: 'utf8' }).trim();
+    const changedFilesStr = execSync('git diff-tree --no-commit-id --name-only -r --root HEAD', { encoding: 'utf8' }).trim();
     if (!changedFilesStr) {
         process.exit(0);
     }
@@ -40,7 +40,7 @@ try {
     const validExtensions = [
         '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss', '.vue', '.svelte',
         '.py', '.java', '.c', '.cpp', '.cs', '.go', '.rb', '.php', '.rs',
-        '.swift', '.kt', '.dart', '.sh'
+        '.swift', '.kt', '.dart', '.sh', '.sql'
     ];
 
     /** Filter function to determine which files to auto-comment [ds] */
@@ -97,13 +97,13 @@ try {
         // Log and attempt to auto-comment the current file [ds]
         console.log(`[devsplain] Automatically commenting file: ${file}`);
         try {
-            let extraFlags = '';
-            if (process.env.DS_OVER) extraFlags += ' --overwrite';
-            if (process.env.DS_KEEP) extraFlags += ' --keep';
-
-            // Construct the command to run the auto-commenting CLI [ds]
             const cliPath = path.join(__dirname, 'cli.js');
-            execSync(`node "${cliPath}" "${file}" --force${modeFlag}${extraFlags}`, { stdio: 'inherit' });
+            const cliArgs = [cliPath, file, '--force'];
+            if (modeFlag.trim()) cliArgs.push(modeFlag.trim());
+            if (process.env.DS_OVER) cliArgs.push('--overwrite');
+            if (process.env.DS_KEEP) cliArgs.push('--keep');
+
+            execFileSync(process.execPath, cliArgs, { stdio: 'inherit' });
             commentedAny = true;
             successfullyCommentedFiles.push(file);
         } catch (err) {
@@ -115,7 +115,7 @@ try {
     if (commentedAny) {
         for (const file of successfullyCommentedFiles) {
             try {
-                execSync(`git add "${file}"`);
+                execFileSync('git', ['add', file]);
             } catch (addErr) {}
         }
         

@@ -57,8 +57,17 @@ if [ -f package.json ] && grep -q '"test"' package.json 2>/dev/null; then
   npm test || exit 1
 fi
 `;
-        // Write pre-commit hook to file [ds]
-        fs.writeFileSync(preCommitHookPath, preCommitContent);
+        // Write pre-commit hook safely [ds]
+        if (fs.existsSync(preCommitHookPath)) {
+            const existing = fs.readFileSync(preCommitHookPath, 'utf8');
+            if (!existing.includes('# devsplain native pre-commit hook')) {
+                fs.appendFileSync(preCommitHookPath, '\n' + preCommitContent);
+            } else {
+                fs.writeFileSync(preCommitHookPath, preCommitContent);
+            }
+        } else {
+            fs.writeFileSync(preCommitHookPath, preCommitContent);
+        }
         try {
             fs.chmodSync(preCommitHookPath, 0o755);
         } catch (err) {}
@@ -73,8 +82,17 @@ fi
 echo "Auto-generating comments for files in the last commit..."
 node "${postCommitScript}"${modeArgs} || exit 1
 `;
-        // Write post-commit hook to file [ds]
-        fs.writeFileSync(postCommitHookPath, postCommitContent);
+        // Write post-commit hook safely [ds]
+        if (fs.existsSync(postCommitHookPath)) {
+            const existing = fs.readFileSync(postCommitHookPath, 'utf8');
+            if (!existing.includes('# devsplain native post-commit hook')) {
+                fs.appendFileSync(postCommitHookPath, '\n' + postCommitContent);
+            } else {
+                fs.writeFileSync(postCommitHookPath, postCommitContent);
+            }
+        } else {
+            fs.writeFileSync(postCommitHookPath, postCommitContent);
+        }
         try {
             fs.chmodSync(postCommitHookPath, 0o755);
         } catch (err) {}
