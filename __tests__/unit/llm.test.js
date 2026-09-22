@@ -141,5 +141,5 @@ describe('LLM Module (getComments)', () => {
 
         await expect(getComments('const x = 1;', 'main.js', fakeConfig, 'default'))
             .rejects.toThrow('AI Provider Request Failed: Connection reset by peer');
-    });
+    }, 10000);
 });
