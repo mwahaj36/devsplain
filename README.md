@@ -113,6 +113,8 @@ devsplain <file-or-directory> [options]
 | `--model <name>` | Temporary one-off override for the model name for this command run only. |
 | `--api-key <key>` | Temporary one-off override for the API key for this command run only. |
 | `--base-url <url>` | Temporary one-off override for the API base URL for this command run only. |
+| `--concurrency <num>` | Temporary one-off override for file concurrency level (1–5, default: 2). |
+| `--chunk-size <lines>` | Temporary one-off override for chunk line size (e.g. 200, 600, 1000). |
 | `--config` | Relaunches the configuration setup wizard. |
 | `--setup-hook` | Installs Git pre-commit and post-commit hooks in the repository. |
 | `--help, -h` | Displays the help menu. |

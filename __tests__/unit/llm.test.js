@@ -1,4 +1,14 @@
-const { getComments, runWithConcurrency, resetConcurrency, CHUNK_SIZE, CHUNK_OVERLAP, CHUNK_THRESHOLD } = require('../../lib/llm');
+const { 
+    getComments, 
+    runWithConcurrency, 
+    resetConcurrency, 
+    getChunkConfig, 
+    PROVIDER_PROFILES, 
+    setDiscoveredTierLimit, 
+    CHUNK_SIZE, 
+    CHUNK_OVERLAP, 
+    CHUNK_THRESHOLD 
+} = require('../../lib/llm');
 
 global.fetch = jest.fn();
 
@@ -396,5 +406,68 @@ describe('runWithConcurrency', () => {
                 return item;
             })
         ).rejects.toThrow('Boom');
+    });
+});
+
+describe('Model-Adaptive Chunking & Tier Scaling', () => {
+    beforeEach(() => {
+        fetch.mockClear();
+        resetConcurrency(2);
+    });
+
+    test('should return provider-specific chunk profiles', () => {
+        const groqCfg = getChunkConfig({ provider: 'groq' });
+        expect(groqCfg.size).toBe(200);
+        expect(groqCfg.threshold).toBe(250);
+        expect(groqCfg.maxTokens).toBe(1000);
+
+        const deepseekCfg = getChunkConfig({ provider: 'deepseek' });
+        expect(deepseekCfg.size).toBe(600);
+        expect(deepseekCfg.threshold).toBe(750);
+        expect(deepseekCfg.maxTokens).toBe(8192);
+
+        const geminiCfg = getChunkConfig({ provider: 'gemini' });
+        expect(geminiCfg.size).toBe(800);
+        expect(geminiCfg.threshold).toBe(1000);
+
+        const defaultCfg = getChunkConfig({ provider: 'unknown' });
+        expect(defaultCfg.size).toBe(250);
+    });
+
+    test('should respect manual chunkSize override from config', () => {
+        const customCfg = getChunkConfig({ provider: 'groq', chunkSize: 500, chunkThreshold: 625, chunkOverlap: 50 });
+        expect(customCfg.size).toBe(500);
+        expect(customCfg.threshold).toBe(625);
+        expect(customCfg.overlap).toBe(50);
+    });
+
+    test('should dynamically scale chunk size when response header reveals high tier limit', () => {
+        setDiscoveredTierLimit(200000);
+        const scaledCfg = getChunkConfig({ provider: 'deepseek' });
+        expect(scaledCfg.size).toBe(900); // 600 * 1.5
+        expect(scaledCfg.threshold).toBe(1125); // 750 * 1.5
+    });
+
+    test('should NOT chunk a 500-line file on DeepSeek provider', async () => {
+        const mediumCode = Array.from({ length: 500 }, (_, i) => `const x${i} = ${i};`).join('\n');
+        fetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({
+                choices: [
+                    { message: { content: '[{"line": 1, "comment": "// single shot comment"}]' } }
+                ]
+            })
+        });
+
+        const dsConfig = {
+            provider: 'deepseek',
+            model: 'deepseek-chat',
+            apiKey: 'fake-ds-key',
+            baseUrl: 'https://api.deepseek.com'
+        };
+
+        const result = await getComments(mediumCode, 'medium.js', dsConfig, 'default');
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(result).toEqual([{ line: 1, comment: '// single shot comment' }]);
     });
 });

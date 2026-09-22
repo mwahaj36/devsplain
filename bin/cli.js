@@ -944,6 +944,8 @@ Options:
   --model <name>      Override AI model name
   --api-key <key>     Override API key for the provider
   --base-url <url>    Override base URL for custom APIs
+  --concurrency <num> Override file concurrency level (1-5, default: 2)
+  --chunk-size <num>  Override chunk line size (e.g. 200, 600, 1000)
   --config            Force run the configuration setup wizard
   --setup-hook        Install Git pre-commit and post-commit hooks in repository
   --remove-hook       Remove devsplain-installed Git hooks from repository
@@ -1002,7 +1004,7 @@ Options:
 
     // Positional-argument parser: walks argv and picks the FIRST non-flag token as filepath, while SKIPPING the value that follows any known value-taking flag. Options can also appear AFTER the positional path, so once filepath is locked in we break to avoid later tokens (which could be stray values) overriding it. Unknown --flags are treated as boolean and do not consume a following token. [ds]
     let filepath = '.';
-    const flagKeys = ['--provider', '--model', '--api-key', '--base-url', '--concurrency'];
+    const flagKeys = ['--provider', '--model', '--api-key', '--base-url', '--concurrency', '--chunk-size'];
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
         if (arg.startsWith('--')) {
@@ -1069,9 +1071,15 @@ Options:
     // Overwrite semantics: file rewrite is allowed if user passed --overwrite OR config.autoPrune is on. --keep explicitly vetoes overwriting regardless of autoPrune, giving users a hard opt-out. [ds]
     const isOverwrite = (hasOverwriteFlag || config.autoPrune) && !hasKeepFlag;
 
-    // Concurrency parsing guard: parseInt on a missing/null flag yields NaN. We clamp to [1,5] to prevent an unbounded fan-out to the AI API (which would trigger rate limits) and to avoid concurrency=0 silently serializing all work. Falls back to 2 — a conservative default that balances throughput and rate-limit safety. [ds]
     const cliConcurrency = parseInt(getArgValue('--concurrency'), 10);
     const concurrencyLevel = (cliConcurrency && cliConcurrency >= 1 && cliConcurrency <= 5) ? cliConcurrency : 2;
+
+    const cliChunkSize = parseInt(getArgValue('--chunk-size'), 10);
+    if (cliChunkSize && cliChunkSize >= 50 && cliChunkSize <= 2000) {
+        config.chunkSize = cliChunkSize;
+        config.chunkThreshold = Math.round(cliChunkSize * 1.25);
+        config.chunkOverlap = Math.max(10, Math.round(cliChunkSize * 0.1));
+    }
 
     // Load user ignore rules from .devsplainignore in cwd. Read errors are swallowed (empty catch) because a missing or unreadable ignore file should not abort the run — it just means no user-provided exclusions. Blank lines and #-prefixed comments are filtered out so patterns list contains only actionable globs. [ds]
     let userIgnorePatterns = [];
