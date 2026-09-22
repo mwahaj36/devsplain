@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { getComments } = require('../lib/llm.js');
+const { getComments, runWithConcurrency, resetConcurrency } = require('../lib/llm.js');
 const { getConfig } = require('../lib/config.js');
 const fs = require('fs');
 const path = require('path');
@@ -766,7 +766,7 @@ Options:
   --force             Bypass the dirty Git tree safety check
   --clean             Scrub only devsplain-generated [ds] comments
   --prune             Destructively scrub ALL comments from files
-  --provider <name>   Override AI provider (gemini, groq, openai, custom)
+  --provider <name>   Override AI provider (gemini, groq, openai, claude, deepseek, custom)
   --model <name>      Override AI model name
   --api-key <key>     Override API key for the provider
   --base-url <url>    Override base URL for custom APIs
@@ -817,7 +817,7 @@ Options:
     };
 
     let filepath = '.';
-    const flagKeys = ['--provider', '--model', '--api-key', '--base-url'];
+    const flagKeys = ['--provider', '--model', '--api-key', '--base-url', '--concurrency'];
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
         if (arg.startsWith('--')) {
@@ -862,10 +862,10 @@ Options:
     if (cliProvider) {
         config.provider = cliProvider;
         if (!cliModel) {
-            config.model = cliProvider === 'gemini' ? 'gemini-2.0-flash' : (cliProvider === 'claude' ? 'claude-3-5-sonnet-20240620' : 'llama-3.3-70b-versatile');
+            config.model = cliProvider === 'gemini' ? 'gemini-2.0-flash' : (cliProvider === 'claude' ? 'claude-3-5-sonnet-20240620' : (cliProvider === 'deepseek' ? 'deepseek-chat' : (cliProvider === 'openai' ? 'gpt-4o' : 'llama-3.3-70b-versatile')));
         }
         if (!cliBaseUrl) {
-            config.baseUrl = cliProvider === 'gemini' ? null : (cliProvider === 'groq' ? 'https://api.groq.com/openai' : (cliProvider === 'openai' ? 'https://api.openai.com' : (cliProvider === 'claude' ? 'https://api.anthropic.com' : '')));
+            config.baseUrl = cliProvider === 'gemini' ? null : (cliProvider === 'groq' ? 'https://api.groq.com/openai' : (cliProvider === 'openai' ? 'https://api.openai.com' : (cliProvider === 'claude' ? 'https://api.anthropic.com' : (cliProvider === 'deepseek' ? 'https://api.deepseek.com' : ''))));
         }
     }
     if (cliModel) config.model = cliModel;
@@ -876,6 +876,10 @@ Options:
     let failCount = 0;
 
     const isOverwrite = (hasOverwriteFlag || config.autoPrune) && !hasKeepFlag;
+
+    // Parse --concurrency flag (default: 2, max: 5, min: 1) [ds]
+    const cliConcurrency = parseInt(getArgValue('--concurrency'), 10);
+    const concurrencyLevel = (cliConcurrency && cliConcurrency >= 1 && cliConcurrency <= 5) ? cliConcurrency : 2;
 
     let userIgnorePatterns = [];
     try {
@@ -908,80 +912,95 @@ Options:
         return false;
     }
 
-    async function processPath(targetPath) {
+    const validExtensions = [
+        '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss', '.vue', '.svelte',
+        '.py', '.java', '.c', '.cpp', '.cs', '.go', '.rb', '.php', '.rs', 
+        '.swift', '.kt', '.dart', '.sh', '.sql'
+    ];
+
+    // Separate file discovery from processing for concurrency support [ds]
+    function collectFiles(targetPath) {
+        const collected = [];
         const stats = fs.statSync(targetPath);
 
-        if (isPathIgnored(targetPath)) {
-            return;
-        }
+        if (isPathIgnored(targetPath)) return collected;
 
         if (stats.isDirectory()) {
             console.log(`\n Scanning directory: ${targetPath}`);
             const items = fs.readdirSync(targetPath);
             for (const item of items) {
-                const fullPath = path.join(targetPath, item);
-                await processPath(fullPath); 
+                collected.push(...collectFiles(path.join(targetPath, item)));
             }
-        } 
-        else if (stats.isFile()) {
+        } else if (stats.isFile()) {
             const ext = path.extname(targetPath).toLowerCase();
-            const validExtensions = [
-                '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss', '.vue', '.svelte',
-                '.py', '.java', '.c', '.cpp', '.cs', '.go', '.rb', '.php', '.rs', 
-                '.swift', '.kt', '.dart', '.sh', '.sql'
-            ];
+            if (!validExtensions.includes(ext)) return collected;
 
-            if (!validExtensions.includes(ext)) {
-                return;
-            }
-
-            const filename = path.basename(targetPath);
             const data = fs.readFileSync(targetPath, 'utf-8');
             if (data.trim() === '') {
-                console.log(` Skipping ${filename} (Empty File)`);
-                return;
+                console.log(` Skipping ${path.basename(targetPath)} (Empty File)`);
+                return collected;
             }
+            collected.push(targetPath);
+        }
+        return collected;
+    }
 
-            console.log(` Analyzing ${filename} in ${mode} mode...`);
-            try {
-                let comments = [];
-                let commentedCode;
-                if (mode !== 'clean' && mode !== 'prune') {
-                    const preProcessMode = isOverwrite ? 'prune' : 'clean';
-                    const cleanData = spliceComments(data, [], preProcessMode, ext);
-                    comments = await getComments(cleanData, filename, config, mode);
-                    commentedCode = spliceComments(cleanData, comments, mode, ext);
-                } else {
-                    commentedCode = spliceComments(data, [], mode, ext);
-                }
-                if (isDryRun) {
-                    console.log(`\n --- DRY RUN PREVIEW: ${filename} ---`);
-                    console.log(commentedCode);
-                    console.log(`---------------------------------------\n`);
-                    const answer = await askQuestion("Type 'write' to save to file, or press any key to discard: ");
-                    if (answer.toLowerCase() === 'write') {
-                        const tempPath = targetPath + '.tmp';
-                        fs.writeFileSync(tempPath, commentedCode, 'utf8');
-                        fs.renameSync(tempPath, targetPath);
-                        console.log(` Successfully saved ${targetPath}`);
-                    } else {
-                        console.log(` Skipped ${targetPath}`);
-                    }
-                } else {
+    async function processSingleFile(targetPath) {
+        const filename = path.basename(targetPath);
+        const ext = path.extname(targetPath).toLowerCase();
+        const data = fs.readFileSync(targetPath, 'utf-8');
+
+        console.log(` Analyzing ${filename} in ${mode} mode...`);
+        try {
+            let comments = [];
+            let commentedCode;
+            if (mode !== 'clean' && mode !== 'prune') {
+                const preProcessMode = isOverwrite ? 'prune' : 'clean';
+                const cleanData = spliceComments(data, [], preProcessMode, ext);
+                comments = await getComments(cleanData, filename, config, mode);
+                commentedCode = spliceComments(cleanData, comments, mode, ext);
+            } else {
+                commentedCode = spliceComments(data, [], mode, ext);
+            }
+            if (isDryRun) {
+                console.log(`\n --- DRY RUN PREVIEW: ${filename} ---`);
+                console.log(commentedCode);
+                console.log(`---------------------------------------\n`);
+                const answer = await askQuestion("Type 'write' to save to file, or press any key to discard: ");
+                if (answer.toLowerCase() === 'write') {
                     const tempPath = targetPath + '.tmp';
                     fs.writeFileSync(tempPath, commentedCode, 'utf8');
                     fs.renameSync(tempPath, targetPath);
-                    console.log(` Successfully commented ${targetPath}`);
+                    console.log(` Successfully saved ${targetPath}`);
+                } else {
+                    console.log(` Skipped ${targetPath}`);
                 }
-                successCount++;
-            } catch (err) {
-                console.error(` Error processing ${filename}: ${err.message}`);
-                failCount++;
+            } else {
+                const tempPath = targetPath + '.tmp';
+                fs.writeFileSync(tempPath, commentedCode, 'utf8');
+                fs.renameSync(tempPath, targetPath);
+                console.log(` Successfully commented ${targetPath}`);
             }
+            successCount++;
+        } catch (err) {
+            console.error(` Error processing ${filename}: ${err.message}`);
+            failCount++;
         }
     }
 
-    await processPath(filepath);
+    // Collect all eligible files, then process with adaptive concurrency [ds]
+    const filesToProcess = collectFiles(filepath);
+
+    // Dry-run mode processes files serially to allow interactive prompts [ds]
+    if (isDryRun || mode === 'clean' || mode === 'prune') {
+        for (const file of filesToProcess) {
+            await processSingleFile(file);
+        }
+    } else {
+        resetConcurrency(concurrencyLevel);
+        console.log(`\n Processing ${filesToProcess.length} file(s) with concurrency: ${concurrencyLevel}`);
+        await runWithConcurrency(filesToProcess, processSingleFile);
+    }
 
     if (failCount > 0 && successCount === 0) {
         console.error("\nFailed: No files were successfully commented.");

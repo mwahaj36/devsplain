@@ -18,7 +18,7 @@ Unlike interactive AI editors, `devsplain` is designed for batch documentation p
 - **Comment Preservation & Tagging**: AI-generated comments are tagged with `[ds]`. Your manually written comments are safe and will never be touched by the engine.
 - **Local Deterministic Scrubber**: The `--clean` flag strips AI-generated `[ds]` comments locally using a deterministic lexical state machine—no LLM calls, API keys, or internet required.
 - **Git Hook Automation**: Supports an automated two-commit Git hook workflow (`pre-commit` for quality, `post-commit` for auto-generated documentation commits) that prevents recursive commit loops.
-- **Bring Your Own LLM**: Native setup wizard for Groq, Gemini, OpenAI, or any OpenAI-compatible API endpoint (like Ollama or LMStudio).
+- **Bring Your Own LLM**: Native setup wizard for Groq, Gemini, OpenAI, Claude, DeepSeek, or any OpenAI-compatible API endpoint (like Ollama or LMStudio).
 - **Exponential Backoff**: Resilient AI request handler that automatically retries rate-limited requests with exponential backoff.
 - **Headless & Override Control**: Configure via environment variables or override global config settings dynamically on the fly with command-line flags.
 
@@ -109,7 +109,7 @@ devsplain <file-or-directory> [options]
 | `--force` | Bypasses the safety block check that prevents running `devsplain` on a dirty Git working tree. |
 | `--clean` | Scrubber mode. Deterministically removes only devsplain-generated comments tagged with `[ds]`, preserving your manual comments. |
 | `--prune` | Destructive scrubber mode. Removes ALL comments and docstrings from source files, including your own manual comments. |
-| `--provider <name>`| Temporary one-off override for the AI provider (`gemini`, `groq`, `openai`, `custom`) for this command run only (does not modify the saved config file). |
+| `--provider <name>`| Temporary one-off override for the AI provider (`gemini`, `groq`, `openai`, `claude`, `deepseek`, `custom`) for this command run only (does not modify the saved config file). |
 | `--model <name>` | Temporary one-off override for the model name for this command run only. |
 | `--api-key <key>` | Temporary one-off override for the API key for this command run only. |
 | `--base-url <url>` | Temporary one-off override for the API base URL for this command run only. |

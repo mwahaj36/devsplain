@@ -76,4 +76,48 @@ describe('Config Module (getConfig)', () => {
             }, null, 2)
         );
     });
+
+    test('should configure DeepSeek provider via wizard correctly', async () => {
+        fs.existsSync.mockReturnValue(false);
+        fs.writeFileSync = jest.fn();
+
+        const mockRl = {
+            question: jest.fn(),
+            close: jest.fn()
+        };
+
+        mockRl.question
+            .mockImplementationOnce((query, cb) => cb('6')) // select DeepSeek
+            .mockImplementationOnce((query, cb) => cb('')) // default model deepseek-chat
+            .mockImplementationOnce((query, cb) => cb('sk-deepseek-test-key'))
+            .mockImplementationOnce((query, cb) => cb('n')) // autoPrune = false
+            .mockImplementationOnce((query, cb) => cb('y')); // confirm
+
+        readline.createInterface.mockReturnValue(mockRl);
+
+        const config = await getConfig(true);
+
+        expect(config).toEqual({
+            provider: 'deepseek',
+            model: 'deepseek-chat',
+            apiKey: 'sk-deepseek-test-key',
+            baseUrl: 'https://api.deepseek.com',
+            autoPrune: false
+        });
+
+        expect(fs.writeFileSync).toHaveBeenCalledWith(
+            expect.any(String),
+            JSON.stringify({
+                activeProvider: 'deepseek',
+                providers: {
+                    deepseek: {
+                        apiKey: 'sk-deepseek-test-key',
+                        model: 'deepseek-chat',
+                        baseUrl: 'https://api.deepseek.com',
+                        autoPrune: false
+                    }
+                }
+            }, null, 2)
+        );
+    });
 });
