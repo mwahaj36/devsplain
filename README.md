@@ -2,7 +2,7 @@
 
 **devsplain never rewrites executable code**—it's a single-shot CLI that adds JSDoc and inline comments across 22 languages using LLMs, preserving non-comment source lines byte-for-byte through deterministic verification.
 
-![devsplain demo](sample.gif)
+![devsplain demo](demo.gif)
 
 Unlike interactive AI editors, `devsplain` is designed for batch documentation passes, CI pipelines, and git hook automation—no agent overhead, no per-file confirmation loops.
 
