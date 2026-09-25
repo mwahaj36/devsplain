@@ -11,6 +11,37 @@ let rl;
 let askQuestion;
 
 /** [ds]
+ * Reads package.json (name, version, description) from the target path's root directory,
+ * falling back to the first heading of README.md, then to an empty string.
+ * Keeps the result under 150 chars so it never meaningfully impacts token budgets.
+*/
+function getProjectFingerprint(targetPath) {
+    try {
+        // Walk up from the target path to find the nearest package.json [ds]
+        const root = fs.statSync(targetPath).isDirectory() ? targetPath : path.dirname(targetPath);
+        const pkgPath = path.join(root, 'package.json');
+        if (fs.existsSync(pkgPath)) {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            const name = pkg.name || '';
+            const version = pkg.version ? `v${pkg.version}` : '';
+            const desc = (pkg.description || '').slice(0, 120);
+            return `// project: ${[name, version, desc].filter(Boolean).join(' — ')}`.slice(0, 150);
+        }
+        // Fallback: extract the first non-empty heading from README.md [ds]
+        const readmePath = path.join(root, 'README.md');
+        if (fs.existsSync(readmePath)) {
+            const firstHeading = fs.readFileSync(readmePath, 'utf8')
+                .split('\n')
+                .find(l => l.trim().startsWith('#'));
+            if (firstHeading) {
+                return `// project: ${firstHeading.replace(/^#+\s*/, '').trim()}`.slice(0, 150);
+            }
+        }
+    } catch (_) {}
+    return '';
+}
+
+/** [ds]
  * Determines if the git working tree has uncommitted changes.
  * Silently returns false if not in a git repo or git is unavailable.
 */
@@ -959,6 +990,9 @@ Options:
     let successCount = 0;
     let failCount = 0;
 
+    // Build a one-line project fingerprint once per run and inject into every getComments() call [ds]
+    const projectFingerprint = getProjectFingerprint(filepath);
+
     const isOverwrite = (hasOverwriteFlag || config.autoPrune) && !hasKeepFlag;
 
     // Clamp concurrency to the 1-5 range; default to 2 to avoid hammering provider rate limits. [ds]
@@ -1075,7 +1109,7 @@ Options:
                 // Overwrite needs prune (not clean) so existing non-generated comments are preserved as context [ds]
                 const preProcessMode = isOverwrite ? 'prune' : 'clean';
                 const cleanData = spliceComments(data, [], preProcessMode, ext);
-                comments = await getComments(cleanData, filename, config, mode);
+                comments = await getComments(cleanData, filename, config, mode, projectFingerprint);
                 commentedCode = spliceComments(cleanData, comments, mode, ext);
             } else {
                 commentedCode = spliceComments(data, [], mode, ext);

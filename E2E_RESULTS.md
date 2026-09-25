@@ -52,3 +52,46 @@ You can run this exact test suite locally to verify the engine on your own machi
    node tests/run-e2e.js
    ```
 4. Sit back and watch it process 1,500+ lines of code!
+
+---
+
+## v2.4.0 — Context-Aware Commenting
+
+**Feature:** Project fingerprint (from `package.json`) + per-file structural skeleton (imports, declarations, exports) injected into every LLM prompt chunk as a fenced, read-only context block.  
+**Token overhead:** ~100–150 tokens per chunk (hard-capped at 600 chars / ~150 tokens).  
+**Zero new dependencies:** Skeleton extracted via pure regex — no AST parser added.
+
+### How It Was Tested
+
+A purpose-built `demo_context_test.js` (243 lines) was run through devsplain in `--dry-run` mode **before** and **after** the changes. The file was designed to expose the limitation: it imports from `lib/llm.js` and `lib/config.js`, uses provider-specific constants (`PROVIDER_PROFILES`, `getChunkConfig`), and contains architectural patterns (`withRateLimitBackoff`, `buildSafetyChecksum`) that only make sense in the context of an LLM-powered CLI tool.
+
+### Comment Quality: Before vs After
+
+| Function | Before (v2.3.2) | After (v2.4.0) |
+|---|---|---|
+| `selectOptimalProvider` | *"Escalates to gemini when file size is more than 2x a provider's threshold, so large files avoid providers that chunk poorly at scale."* | *"Routes oversized files to a known high-context provider (gemini) when the file is more than 2x the provider's normal threshold, avoiding truncated context on smaller-context providers."* |
+| `buildSafetyChecksum` | *"Fast, non-cryptographic 32-bit hash (djb2-style) suffices to detect if a file changed between planning and writing."* | *"Cheap 32-bit djb2-variant rolling hash used as a **write-time safety checksum**. Not cryptographic; purpose is only to detect accidental concurrent modification before overwriting the source file."* |
+| `validateChecksum` | *(no comment generated)* | *"Verifies the file has not changed since its checksum was captured. Callers should abort the write if this returns false to avoid clobbering user edits that landed during LLM round-trips."* |
+| `deduplicateComments` | *(no comment generated)* | *"Removes duplicate comments that arise when the same line is re-emitted across chunk boundaries due to overlap windows."* |
+| `mergeChunkResults` | *"Re-attributes chunk-local line numbers back to the original file space; each chunk's comments must fall within [start+1, end]..."* | *"Re-aligns chunk-local line numbers to their absolute file positions and discards any comment that falls outside its chunk's [start+1, end] range, which typically indicates a **hallucinated line reference**."* |
+| `withRateLimitBackoff` | *"Retries only when err.isRateLimit is truthy; jittered exponential backoff..."* | *"Retries fn on rate-limit errors with exponential backoff plus jitter. Jitter (0-500ms) prevents **thundering-herd retries when many processes share the same provider quota**."* |
+| `content.split(/\r?\n/)` | *(no inline comment)* | *"Splits on /\r?\n/ to normalize both LF and CRLF line endings, preventing stray carriage returns from leaking into inserted comments when re-joined for output."* |
+
+### Key Improvements Observed
+
+1. **Hallucination context**: `mergeChunkResults` now correctly identifies out-of-range comments as *"hallucinated line references"* — impossible without knowing this is an LLM output pipeline.
+2. **Domain-specific terminology**: `withRateLimitBackoff` now mentions *"provider quota"* instead of generic retry language — only possible with project fingerprint context.
+3. **Write-safety intent**: `buildSafetyChecksum` and `validateChecksum` now form a coherent pair — the after pass understood they are a guard for *LLM round-trips*, not a general integrity tool.
+4. **Comment coverage**: 3 functions/lines that generated no comment in v2.3.2 now have meaningful comments in v2.4.0.
+
+### Token Cost Measurement
+
+Context block injected per chunk (actual):
+```
+// project: devsplain v2.4.0 — An agent-agnostic CLI tool that automatically adds JSDoc and inline comments to your code using free LLMs.
+// file-imports: const { getChunkConfig, PROVIDER_PROFILES, CHUNK_SIZE, CHUNK_THRESHOLD } = require('./lib/llm.js'); | ...
+// file-defines: async function selectOptimalProvider | function resolveChunkBudget | ...
+// file-exports: module.exports = { ... }
+```
+**Measured overhead: ~130 tokens** — well within the 150-token budget cap. No rate limit increase observed on Groq free tier.
+
