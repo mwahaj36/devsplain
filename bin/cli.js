@@ -11,13 +11,12 @@ let rl;
 let askQuestion;
 
 /** [ds]
- * Derives a short project identifier by reading package.json (name/version/description)
- * or falling back to the first README.md heading. Used to give the LLM context about
- * the codebase. Silently returns '' on any error since this is best-effort metadata.
+ * Generates a short project identifier comment by inspecting package.json or README.md.
+ * Returns an empty string if no meaningful project metadata can be found; this is
+ * intentionally best-effort since the fingerprint is only used as a prompt hint.
 */
 function getProjectFingerprint(targetPath) {
     try {
-        // Resolve the project root: if a file path was given, walk up to its containing directory [ds]
         const root = fs.statSync(targetPath).isDirectory() ? targetPath : path.dirname(targetPath);
         const pkgPath = path.join(root, 'package.json');
         if (fs.existsSync(pkgPath)) {
@@ -41,8 +40,9 @@ function getProjectFingerprint(targetPath) {
 }
 
 /** [ds]
- * Returns true only when inside a git repo AND the working tree has uncommitted changes.
- * Pipes stderr to ignore so non-git directories fail quietly.
+ * Detects whether the current working directory is a dirty git work tree.
+ * Returns false on any error (not a repo, git missing) so callers can treat
+ * failures as "not dirty" rather than aborting the run.
 */
 function isGitDirty() {
     try {
@@ -57,14 +57,19 @@ function isGitDirty() {
 }
 
 /** [ds]
- * Heuristic scanner that determines whether a given line index sits inside a string,
- * comment, regex literal, or raw string. Runs a lightweight character-by-character
- * state machine over preceding lines using per-extension syntax rules, since different
- * languages (Python, HTML, C++, JS, Rust/Swift, shell/Ruby, PHP) have distinct literal
- * and comment delimiters. Used to avoid placing comments inside non-code regions.
+ * Heuristically determines whether the given line index is inside a string literal
+ * or block comment for the language implied by `ext`.
+ *
+ * This is used to avoid inserting doc comments into string contents. It is a
+ * single-pass, line-oriented lexer (no full parser) that tracks state across
+ * lines: JS/HTML block comments, C++ raw string literals, JS regex literals,
+ * Python triple-quoted strings, and plain quote/backtick state.
+ *
+ * Trade-offs: language detection is best-effort and may misclassify exotic
+ * syntax, but errs on the side of false positives (treating lines as "inside")
+ * so we don't corrupt source code.
 */
 function isLineInsideString(lines, targetLineIndex, ext = '') {
-    // Per-language feature flags resolved once from the file extension [ds]
     const isPython = ext.toLowerCase() === '.py';
     const isHTML = ['.html', '.vue', '.svelte'].includes(ext.toLowerCase());
     const isRustOrSwift = ['.rs', '.swift'].includes(ext.toLowerCase());
@@ -85,7 +90,6 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
         const line = lines[i];
         let j = 0;
         while (j < line.length) {
-            // Rust/Swift allow nested block comments, so track depth instead of a boolean [ds]
             if (inBlockJS) {
                 if (line.slice(j, j + 2) === '/*') {
                     if (isRustOrSwift) blockDepthJS++;
@@ -93,7 +97,6 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                     continue;
                 }
                 if (line.slice(j, j + 2) === '*/') {
-                    // Only Rust/Swift nest; other languages close on the first */ [ds]
                     if (isRustOrSwift && blockDepthJS > 1) {
                         blockDepthJS--;
                     } else {
@@ -106,7 +109,6 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                 j++;
                 continue;
             }
-            // C++ raw strings: R"delim(...)delim" — must match the exact closing delimiter [ds]
             if (inCppRawString) {
                 if (line.slice(j, j + 2 + cppRawDelimiter.length) === ')' + cppRawDelimiter + '"') {
                     inCppRawString = false;
@@ -116,7 +118,6 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                 j++;
                 continue;
             }
-            // Regex literals: a '/' is only a terminator when not preceded by an odd number of backslashes [ds]
             if (inRegex) {
                 let escaped = false;
                 let k = j - 1;
@@ -130,7 +131,6 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                 j++;
                 continue;
             }
-            // HTML/XML block comments terminate with --> [ds]
             if (inBlockHTML) {
                 if (line.slice(j, j + 3) === '-->') {
                     inBlockHTML = false;
@@ -140,8 +140,9 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                 j++;
                 continue;
             }
+            // Skip quote-state tracking while entering a comment so that comment markers [ds]
+            // (which may contain quotes) don't desync the string parser. [ds]
             // Check if comment starts (skip processing quotes if we are entering a comment)
-            // Only treat comment openers as real when outside of any string literal [ds]
             if (!inSingle && !inDouble && !inBacktick && !inTripleSingle && !inTripleDouble) {
                 if (isPython) {
                     if (line[j] === '#') {
@@ -162,7 +163,6 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                         break; // Ignore rest of line
                     }
                 } else {
-                    // Shell and Ruby use '#' for line comments like Python [ds]
                     const isShellOrRuby = ['.sh', '.rb'].includes(ext.toLowerCase());
                     if (isShellOrRuby) {
                         if (line[j] === '#') {
@@ -181,7 +181,9 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                         if (ext.toLowerCase() === '.php' && line[j] === '#') {
                             break; // Ignore rest of line
                         }
-                        // C++11 raw string syntax: R"<delim>( ... )<delim>" (delimiter up to 16 chars, no parens/backslash/space) [ds]
+                        // C++11 raw string literal: R"delim( ... )delim". Capture the delimiter so [ds]
+                        // the matching close can be detected later. Delimiter is limited to <=16 [ds]
+                        // chars and must not contain parens, backslash, or whitespace per spec. [ds]
                         if (isCpp && line[j] === 'R' && line[j+1] === '"') {
                             const match = line.slice(j).match(/^R"([^()\\\s]{0,16})\(/);
                             if (match) {
@@ -191,7 +193,9 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                                 continue;
                             }
                         }
-                        // Distinguishing regex from division in JS requires looking back at the previous non-whitespace token [ds]
+                        // Disambiguate '/' as a regex literal vs division/comment by looking at the [ds]
+                        // previous significant token. Regex is valid at start-of-expression positions [ds]
+                        // (after operators, keywords like return/typeof, or at line start). [ds]
                         if (isJS && line[j] === '/') {
                             let k = j - 1;
                             while (k >= 0 && /\s/.test(line[k])) k--;
@@ -200,12 +204,10 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                                 isRegex = true;
                             } else {
                                 const prevChar = line[k];
-                                // If preceded by an operator/punctuation, '/' starts a regex rather than division [ds]
                                 if (/[=({\[:,;!+*&|?<>-]/.test(prevChar)) {
                                     isRegex = true;
                                 } else {
                                     const prefix = line.slice(0, k + 1);
-                                    // Keywords like return/typeof/yield/await/throw are followed by expressions, so '/' begins a regex [ds]
                                     if (/(?:return|typeof|yield|await|throw)\s*$/.test(prefix)) {
                                         isRegex = true;
                                     }
@@ -220,7 +222,6 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                     }
                 }
             }
-            // Python triple-quoted strings toggle on (''' or """) and can span many lines [ds]
             if (isPython) {
                 if (!inTripleSingle && !inSingle && !inDouble) {
                     if (line.slice(j, j + 3) === '"""') {
@@ -237,11 +238,9 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                     }
                 }
             }
-            // Triple-quoted strings span multiple lines so single/double/backtick toggling must be suppressed while inside them, otherwise quote characters within a docstring would corrupt parser state. [ds]
             if (!inTripleSingle && !inTripleDouble) {
                 if (!isPython) {
                     if (!inSingle && !inDouble) {
-                        // JS/TS template literals: detect backtick only when not already inside quotes; escaping is determined by counting consecutive backslashes (odd count = escaped) rather than a boolean flag, since '\\\\`' is unescaped but '\\`' is escaped. [ds]
                         if (line[j] === '`') {
                         let escaped = false;
                         let k = j - 1;
@@ -255,7 +254,6 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
                     }
                 }
                 }
-                // Quote characters inside a template literal are literal text, so skip quote toggling when inside backticks. [ds]
                 if (!inBacktick) {
                     if (line[j] === '"' && !inSingle) {
                         let escaped = false;
@@ -282,7 +280,6 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
             }
             j++;
         }
-        // Languages whose string literals cannot span lines: reset quote state at each newline so an unterminated string doesn't cascade false positives across the rest of the file. [ds]
         const resetsAtLineEnd = ['.js', '.jsx', '.ts', '.tsx', '.java', '.c', '.cpp', '.cs', '.go', '.swift', '.kt', '.dart'].includes(ext.toLowerCase());
         if (resetsAtLineEnd) {
             inSingle = false;
@@ -294,11 +291,14 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
 }
 
 /** [ds]
- * Scans source lines and reports which lines contain or are inside comments, handling language-specific string and comment syntax.
- * Tracks multi-line state (block comments, Python triple-quotes, C++ raw strings, regex literals, nested Rust/Swift /* *​/ blocks, HTML comments) so comment markers inside strings are not misdetected.
- * @param {string[]} lines - Source file contents split by line.
+ * Analyzes a file's lines to locate and extract comment blocks.
+ * Performs a language-aware lexical scan that tracks nested states across lines,
+ * including string literals (single, double, backtick, Python triple-quotes),
+ * C++ raw strings, JS/HTML block comments, and regex literals, so that comment
+ * delimiters appearing inside string contents are ignored.
+ * @param {string[]} lines - Source file lines.
  * @param {string} ext - File extension used to select language-specific rules.
- * @returns {Array} Per-line comment analysis results.
+ * @returns {Array} Analysis results with per-line comment information.
 */
 function analyzeComments(lines, ext = '') {
     const isPython = ext.toLowerCase() === '.py';
@@ -323,9 +323,10 @@ function analyzeComments(lines, ext = '') {
         let commentStartIndex = -1;
         let isInsideBlockStart = inBlockJS || inBlockHTML;
         let j = 0;
+        // Character-by-character scan is required to distinguish comment markers that appear inside strings, regexes, or nested block comments; a simple line-based check would produce false positives. [ds]
         while (j < line.length) {
             if (inBlockJS) {
-                // Ensure Rust/Swift nested block comments keep depth so inner '/*' does not prematurely end the outer comment when a single '*/' appears. [ds]
+                // Rust and Swift allow nested block comments, so track depth rather than a boolean; other languages close on the first */. [ds]
                 if (line.slice(j, j + 2) === '/*') {
                     if (isRustOrSwift) blockDepthJS++;
                     j += 2;
@@ -345,7 +346,7 @@ function analyzeComments(lines, ext = '') {
                 continue;
             }
             if (inCppRawString) {
-                // C++ raw string terminator is ')' + delimiter + '"'; matching must include the delimiter to avoid false termination on incidental ')' characters. [ds]
+                // C++ raw string terminators are of the form )DELIM", where DELIM is the user-chosen delimiter captured at the opening R"DELIM(. [ds]
                 if (line.slice(j, j + 2 + cppRawDelimiter.length) === ')' + cppRawDelimiter + '"') {
                     inCppRawString = false;
                     j += 2 + cppRawDelimiter.length;
@@ -355,7 +356,7 @@ function analyzeComments(lines, ext = '') {
                 continue;
             }
             if (inRegex) {
-                // Regex literal termination: '/' must be unescaped. Escape detection uses backslash parity rather than a flag so pairs like '\\\\' count as escaped-backslash + bare slash. [ds]
+                // Count consecutive preceding backslashes to determine if this '/' is escaped; an even count means the slash is unescaped and closes the regex. [ds]
                 let escaped = false;
                 let k = j - 1;
                 while (k >= 0 && line[k] === '\\') {
@@ -390,7 +391,6 @@ function analyzeComments(lines, ext = '') {
                         j += 4;
                         continue;
                     }
-                    // .vue and .svelte files can embed JS, so recognize /* */ inside HTML-typed files as JS block comments. [ds]
                     if (line.slice(j, j + 2) === '/*') {
                         commentStartIndex = j;
                         inBlockJS = true;
@@ -402,9 +402,8 @@ function analyzeComments(lines, ext = '') {
                         break;
                     }
                 } else {
-                    // Shell and Ruby use '#' for comments rather than '//', falling back to the non-HTML branch below. [ds]
                     const isShellOrRuby = ['.sh', '.rb'].includes(ext.toLowerCase());
-                    // Shell and Ruby use hash comments, while C-style languages need additional checks for regex, PHP, C++ raw strings, and JS regex literals [ds]
+                    // Shell and Ruby use '#' for comments; other languages use '//' or '/* */'. PHP also treats '#' as a comment (handled below). [ds]
                     if (isShellOrRuby) {
                         if (line[j] === '#') {
                             commentStartIndex = j;
@@ -422,12 +421,11 @@ function analyzeComments(lines, ext = '') {
                             j += 2;
                             continue;
                         }
-                        // PHP additionally supports '#' line comments alongside '//' and '/* */'. [ds]
                         if (ext.toLowerCase() === '.php' && line[j] === '#') {
                             commentStartIndex = j;
                             break;
                         }
-                        // C++ raw string literals use the syntax R"delimiter(...)delimiter" where the delimiter is optionally up to 16 chars without parens/backslashes/whitespace [ds]
+                        // C++11 raw string literals: R"delim(...)delim". The delimiter up to 16 chars cannot contain parens, backslashes, or whitespace. Must be checked before treating '/' as comment start. [ds]
                         if (isCpp && line[j] === 'R' && line[j+1] === '"') {
                             const match = line.slice(j).match(/^R"([^()\\\s]{0,16})\(/);
                             if (match) {
@@ -437,7 +435,7 @@ function analyzeComments(lines, ext = '') {
                                 continue;
                             }
                         }
-                        // Distinguishing a division operator from a regex literal requires checking the previous non-whitespace token: after operators/keywords like 'return' or '=' a '/' starts a regex; after identifiers/numbers/literals it's division [ds]
+                        // Disambiguate '/' as a regex literal vs division operator. A regex is valid if it appears at start of expression: after an operator, opening bracket, or keywords like return/typeof. [ds]
                         if (isJS && line[j] === '/') {
                             let k = j - 1;
                             while (k >= 0 && /\s/.test(line[k])) k--;
@@ -464,9 +462,9 @@ function analyzeComments(lines, ext = '') {
                     }
                 }
             }
+            // Python triple-quoted strings toggle on each occurrence; must not be interpreted while already inside a single/double quote of the other kind. [ds]
             if (isPython) {
                 if (!inTripleSingle && !inSingle && !inDouble) {
-                    // Triple-quoted strings (docstrings) toggle on and off, but must not be entered/exited while already inside a single/double-quoted string of the other kind [ds]
                     if (line.slice(j, j + 3) === '"""') {
                         inTripleDouble = !inTripleDouble;
                         j += 3;
@@ -481,10 +479,10 @@ function analyzeComments(lines, ext = '') {
                     }
                 }
             }
+            // Standard single/double quote and backtick toggling. An odd number of preceding backslashes escapes the quote character (but '\\' is a literal backslash, so the quote is not escaped). [ds]
             if (!inTripleSingle && !inTripleDouble) {
                 if (!isPython) {
                     if (!inSingle && !inDouble) {
-                        // Backtick (template literal) handling: count preceding backslashes to detect escaping; an even count means the backtick is unescaped and toggles the state [ds]
                         if (line[j] === '`') {
                         let escaped = false;
                         let k = j - 1;
@@ -499,7 +497,6 @@ function analyzeComments(lines, ext = '') {
                 }
                 }
                 if (!inBacktick) {
-                    // Same escaped-backslash parity check applies to quote toggling so that \" or \' do not terminate a string [ds]
                     if (line[j] === '"' && !inSingle) {
                         let escaped = false;
                         let k = j - 1;
@@ -526,14 +523,18 @@ function analyzeComments(lines, ext = '') {
             }
             j++;
         }
-        // Languages without multi-line string literals (except triple-quoted Python) reset quote/regex state at each newline, since a real newline inside a string is a syntax error or implicitly closes the string [ds]
+        /** [ds]
+         * Collects information about comments and string/block constructs on every line,
+         * used by 'clean'/'prune' modes to delete pure comments and strip trailing comments.
+         * Returns per-line metadata: isPureComment, commentStartIndex, isInsideBlock.
+        */
         const resetsAtLineEnd = ['.js', '.jsx', '.ts', '.tsx', '.java', '.c', '.cpp', '.cs', '.go', '.swift', '.kt', '.dart'].includes(ext.toLowerCase());
         if (resetsAtLineEnd) {
             inSingle = false;
             inDouble = false;
             inRegex = false;
         }
-        // A line is fully inside a block comment if it started inside one and did not encounter the closing marker before end-of-line [ds]
+        // A line is 'entirely inside a block' if it began within a block and no comment start was found here (meaning the block-end has not been detected by this line's scanner). [ds]
         const isEntirelyInsideBlock = isInsideBlockStart && (inBlockJS || inBlockHTML || (commentStartIndex === -1));
         let isPureComment = false;
         if (isEntirelyInsideBlock) {
@@ -556,32 +557,31 @@ function analyzeComments(lines, ext = '') {
 }
 
 /** [ds]
- * Splices comment lines into or removes comment lines from source data according to mode.
- * Modes: 'default' inserts comments above their target lines; 'prune' removes comments that occupy their own line;
- * 'clean' removes all comments except those belonging to blocks containing a [ds] tag.
- * Preserves original line endings (CRLF vs LF) and adjusts insertion for 1-indexed comment line numbers.
+ * Applies comment insertions/removals to source text. Handles three modes:
+ *  - 'default': insert the provided comments above their target lines (1-indexed).
+ *  - 'clean': delete pure-comment lines; preserve blocks containing '[ds]' markers.
+ *  - 'prune': remove pure comments and strip trailing comments from code lines.
+ * Preserves the original CRLF/LF line-ending style.
 */
 function spliceComments(data, comments, mode = 'default', ext = '') {
-    // Detect and preserve original line-ending style to avoid rewriting the whole file's terminators [ds]
     const hasCRLF = data.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
     const originalLines = data.split(/\r?\n/);
-    // Process from bottom to top so that line number references remain stable as we mutate the array [ds]
+    // Sort descending by line number so insertions/deletions do not shift indices of later operations. [ds]
     const sortedComments = [...comments].sort((a, b) => b.line - a.line);
-    // Allow line === originalLines.length + 1 to support appending at the very end of the file [ds]
     const validComments = sortedComments.filter(c => c.line >= 1 && c.line <= originalLines.length + 1);
 
     const annotated = originalLines.map((text, index) => ({ text, originalIndex: index }));
     let analysis = null;
     let dsBlocks = new Set();
 
+    // 'clean' and 'prune' require comment analysis; 'default' inserts blindly. [ds]
     if (mode === 'clean' || mode === 'prune') {
         analysis = analyzeComments(originalLines, ext);
         const finalDeletions = new Set();
         if (mode === 'clean') {
             let i = 0;
             while (i < originalLines.length) {
-                // Identify contiguous runs of lines that are entirely inside block comments so we can decide whether to preserve the whole block [ds]
                 if (analysis[i].isInsideBlock) {
                     let start = i;
                     let end = i;
@@ -589,6 +589,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
                     let blockStart = Math.max(0, start - 1);
                     let blockEnd = end - 1;
                     let hasDs = false;
+                    // Inline '[ds]' markers opt a comment block out of deletion, so users can retain documentation-style comments. [ds]
                     for (let k = blockStart; k <= blockEnd; k++) {
                         if (originalLines[k].includes('[ds]')) hasDs = true;
                     }
@@ -603,33 +604,30 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
                 }
             }
         }
-/** [ds]
- * Main processing loop that handles comment removal (prune/clean modes) or insertion.
- * Uses a two-pass strategy: first pass removes/augments lines in the `annotated` array,
- * then final deletions are applied in descending order to avoid index shifting during splice.
- * A safety block prevents deletion of non-comment lines as a defensive guard.
-*/
 
+        // Main pass: walk every original line and mutate/prune based on mode. [ds]
+        // 'prune' removes all comments; 'clean' removes only [ds]-tagged comments. [ds]
+        // Shebang lines are skipped to preserve interpreter directives. [ds]
         for (let i = 0; i < originalLines.length; i++) {
             const lineNum = i + 1;
             const lineStr = originalLines[i];
             const lineAnalysis = analysis[i];
 
-            // Preserve shebang lines: they are technically comments but are semantically required to be the first line [ds]
+            // Preserve shebang lines: they are syntactically significant and must never be treated as deletable comments. [ds]
             if (lineStr.trim().startsWith('#!')) {
                 continue;
             }
 
+            // prune mode: strip comments everywhere, preserving shebangs [ds]
             if (mode === 'prune') {
                 if (lineAnalysis.isPureComment) {
                     finalDeletions.add(lineNum);
-                // For inline/trailing comments, strip only the comment portion from the line body [ds]
                 } else if (lineAnalysis.commentStartIndex !== -1) {
                     const idx = lineAnalysis.commentStartIndex;
                     const remainder = lineStr.slice(idx);
                     let newText = lineStr.slice(0, idx).trimEnd();
                     
-                    // For inline block comments, strip from the /* to the */ if both occur on the same line; otherwise leave the remainder intact for subsequent-splice handling [ds]
+                    // Handle trailing C-style or HTML block comments that start but don't end on this line. Only strip if the closing token is on the same line; otherwise leave intact to avoid mangling multi-line comment bodies. [ds]
                     if (remainder.startsWith('/*')) {
                         const endIdx = remainder.indexOf('*/');
                         if (endIdx !== -1) {
@@ -644,6 +642,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
                     
                     annotated[i].text = newText.trimEnd();
                 }
+            // clean mode: only remove [ds]-tagged comments (line-level or inline marker). Non-[ds] comments must be preserved. [ds]
             } else if (mode === 'clean') {
                 const isDsBlockLine = dsBlocks.has(lineNum);
                 const hasDsInline = lineStr.includes('[ds]');
@@ -677,6 +676,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
         }
 
 
+        // Fold in comment positions discovered by the AST/parser but not already handled line-by-line above. [ds]
         for (const c of validComments) {
             const lineIdx = c.line - 1;
             if (lineIdx >= 0 && lineIdx < originalLines.length) {
@@ -684,21 +684,20 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
             }
         }
 
-        // Sort descending so splices don't invalidate indices of subsequent deletions [ds]
+        // Sort descending so splice() by index doesn't shift subsequent targets. [ds]
         const linesToDelete = Array.from(finalDeletions).sort((a, b) => b - a);
 
+        // Final safety net: before removing a line, verify it actually looks like a comment (or blank). Prevents accidentally deleting live code if analysis was wrong. [ds]
         for (const lineNum of linesToDelete) {
             const targetLine = originalLines[lineNum - 1];
             if (!targetLine) continue;
             const trimmedLine = targetLine.trim();
 
             const lineAnalysis = analysis[lineNum - 1];
-            // Never delete shebang lines even if flagged, since removing them breaks script execution [ds]
             if (trimmedLine.startsWith('#!')) {
                 continue;
             }
 
-            // Defense-in-depth: verify flagged line is actually a comment before mutating the output [ds]
             const isCommentLine = 
                 lineAnalysis.isInsideBlock ||
                 lineAnalysis.isPureComment ||
@@ -712,32 +711,33 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
                 trimmedLine.endsWith('*/') ||
                 trimmedLine === '';
 
-            // Abort deletion if line contains code, preserving source integrity over aggressive pruning [ds]
             if (!isCommentLine) {
                 console.warn(`[devsplain] Safety Block: Refused to delete non-comment line ${lineNum}: "${trimmedLine}"`);
                 continue;
             }
 
+            // Splice removes exactly one line at the (1-indexed) target position. [ds]
             annotated.splice(lineNum - 1, 1);
         }
     } else {
+        // Insertion path: re-inject validComments back into the file at their original line offsets. [ds]
         for (const c of validComments) {
-            // Guard against inserting comments inside string literals (e.g., multiline strings containing '//') [ds]
+            // Guard against inserting a comment into the middle of a multi-line string literal, which would corrupt parsing. [ds]
             if (isLineInsideString(originalLines, c.line - 1, ext)) {
                 console.warn(`[devsplain] Skipping comment insertion at line ${c.line} to avoid string literal corruption.`);
                 continue;
             }
 
             const targetLine = originalLines[c.line - 1] || '';
+            // Inherit the target line's leading whitespace so inserted comments align with surrounding code. [ds]
             const indentMatch = targetLine.match(/^([ \t]*)/);
             const indentation = indentMatch ? indentMatch[1] : '';
 
-            // Re-indent each inserted comment line to match the target line's leading whitespace [ds]
             const commentLines = c.comment.split(/\r?\n/).map((line, idx) => {
                 let trimmed = line.trimStart();
                 if (!trimmed) return '';
 
-                // Detect line-comment styles vs block terminators to place the [ds] marker correctly [ds]
+                // Detect comment dialects to decide where the [ds] marker belongs: single-line comments get it appended; for block comments the marker goes after the opening token on line 0 (or before the closing token if line 0 is already the closer). [ds]
                 const isSingleLine = trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('--');
                 const isBlockEnd = trimmed.endsWith('*/') || trimmed.endsWith('-->');
 
@@ -745,14 +745,13 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
                     trimmed = trimmed + ' [ds]';
                 } else if (idx === 0) {
                     if (isBlockEnd) {
-                        // Insert [ds] before the block-close token so it stays within the comment syntax [ds]
                         trimmed = trimmed.replace(/(\*\/|-->)$/, '[ds] $1');
                     } else {
                         trimmed = trimmed + ' [ds]';
                     }
                 }
 
-                // Preserve JSDoc-style asterisk alignment by offsetting one extra space [ds]
+                // JSDoc-style continuation lines get an extra leading space so '*' aligns under '/*'. [ds]
                 if (trimmed.startsWith('*') && !trimmed.startsWith('*/') && !trimmed.startsWith('/*')) {
                     return indentation + ' ' + trimmed;
                 }
@@ -764,12 +763,12 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
         }
     }
 
-    // Separate original lines (with preserved indices) from purely inserted comment lines [ds]
+    // Split the annotated buffer back into original lines (with possibly edited text) and purely inserted comment lines (originalIndex === -1). [ds]
     const filtered = annotated.filter(line => line.originalIndex !== -1);
     const filteredText = filtered.map(line => line.text);
     const filteredIndices = filtered.map(line => line.originalIndex);
 
-    // Track multi-line block comment state so we only validate the first line of each inserted block [ds]
+    // Safety assertion pass: every inserted line must actually be a comment. Raises hard error if non-comment content was injected. [ds]
     const insertedLines = annotated.filter(line => line.originalIndex === -1);
     let inInsertedBlock = false;
     for (const item of insertedLines) {
@@ -788,18 +787,16 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
             trimmed.startsWith('#') || 
             trimmed.startsWith('<!--') || 
             trimmed.startsWith('--');
-        // Final safety assertion: refuse to emit output if any inserted line is not comment syntax [ds]
         if (!isValidComment) {
             throw new Error(`Safety Assertion Failed: Refused to insert non-comment code: "${trimmed}"`);
         }
-        // Enter block-comment state if this line opens a block without closing it on the same line [ds]
+        // Track multi-line block comment state so intermediate lines (which may not start with a comment token) aren't wrongly rejected. [ds]
         if ((trimmed.startsWith('/*') && !trimmed.includes('*/')) || (trimmed.startsWith('<!--') && !trimmed.includes('-->'))) {
             inInsertedBlock = true;
         }
     }
 
-    // Verify output fidelity: every retained original line must match its source, accounting for [ds]
-    // comment stripping applied during prune/clean. Catches silent corruption before write. [ds]
+    // Post-condition check: for every surviving original line, verify its text either matches the source exactly or is a predictable comment-stripped version. Catches accidental corruption before writing to disk. [ds]
     const textEqual = filteredText.every((text, idx) => {
         const origIdx = filteredIndices[idx];
         const originalLine = originalLines[origIdx];
@@ -807,23 +804,34 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
             return true;
         }
         if ((mode === 'clean' || mode === 'prune') && analysis) {
-            // Verify that removing the comment from this line produces exactly the expected stripped text. This acts as a safety check that the comment parser correctly identified comment boundaries for all supported syntaxes. [ds]
+            /** [ds]
+             * Safety verification for the stripping pipeline: checks whether applying the
+             * expected comment-removal transformation to `originalLine` produces the
+             * already-processed `text`. The check is intentionally strict (must match
+             * exactly after trimEnd) because any divergence implies the annotation
+             * indices used for splicing are out of sync with the source, which would
+             * silently corrupt user code.
+            */
             const lineAnalysis = analysis[origIdx];
+            // Only relevant when this line actually had a comment start AND isn't already a pure-comment line (which would have no code prefix to verify against). [ds]
             if (lineAnalysis && lineAnalysis.commentStartIndex !== -1 && !lineAnalysis.isPureComment) {
+                // origIdx is 0-based; dsBlocks stores 1-based line numbers, hence the +1 offset. [ds]
                 const isDsBlockLine = dsBlocks.has(origIdx + 1);
                 const hasDsInline = originalLine.includes('[ds]');
+                // In 'clean' mode we only strip [ds] lines; in 'prune' mode we strip every comment regardless of origin. [ds]
                 if (mode === 'prune' || (mode === 'clean' && (hasDsInline || isDsBlockLine))) {
                     const idx = lineAnalysis.commentStartIndex;
                     const remainder = originalLine.slice(idx);
                     let expectedStripped = originalLine.slice(0, idx).trimEnd();
                     
-                    // Handle inline block comments (`/* ... */`) that start and end on the same line; preserve any code that appears after the closing delimiter. [ds]
+                    // Reconstruct what the line *should* look like after removing a single block comment. Only single-line comments can be validated this way; multi-line block comments spanning lines are handled elsewhere via block-level logic, so they fall through and skip the equality check. [ds]
                     if (remainder.startsWith('/*')) {
                         const endIdx = remainder.indexOf('*/');
                         if (endIdx !== -1) {
+                            // Preserve anything after the closing */ so we can compare against the actually-spliced output. [ds]
                             expectedStripped = originalLine.slice(0, idx) + remainder.slice(endIdx + 2);
                         }
-                    // HTML-style comments (`<!-- ... -->`) follow a similar single-line stripping rule with a 3-char closing delimiter. [ds]
+                    // Same reconstruction rationale for HTML comments. [ds]
                     } else if (remainder.startsWith('<!--')) {
                         const endIdx = remainder.indexOf('-->');
                         if (endIdx !== -1) {
@@ -832,7 +840,6 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
                     }
                     expectedStripped = expectedStripped.trimEnd();
 
-                    // Only mark this line as unchanged if the actual result exactly matches the predicted comment-stripped form; any mismatch signals a parser bug. [ds]
                     if (text === expectedStripped) {
                         return true;
                     }
@@ -842,7 +849,13 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
         return false;
     });
 
-    // Safety invariant: after splicing out comments, the surviving source line indices must remain strictly increasing (monotonically). A violation means lines were duplicated, reordered, or lost. [ds]
+    /** [ds]
+     * The filteredIndices array is the list of positions in the original file
+     * that survived comment stripping. It must be strictly increasing because
+     * downstream splice operations rely on ascending order to rebuild the file
+     * correctly. A regression here would mean an index-tracking bug earlier in
+     * the pipeline.
+    */
     let indicesSequential = true;
     for (let i = 1; i < filteredIndices.length; i++) {
         if (filteredIndices[i] <= filteredIndices[i - 1]) {
@@ -851,6 +864,7 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
         }
     }
 
+    // Failsafe: if either the text content or the index ordering has diverged, we refuse to output — silently writing corrupted code is worse than crashing. [ds]
     if (!textEqual || !indicesSequential) {
         throw new Error("Safety Assertion Failed: Spliced code does not match original code minus comments!");
     }
@@ -859,7 +873,12 @@ function spliceComments(data, comments, mode = 'default', ext = '') {
 }
 
 /** [ds]
- * CLI entry point: parses arguments, merges them with persisted config, runs the commenter across the target file(s), and handles special subcommands like --help, --version, --config, hook install/removal.
+ * Entry point for the `devsplain` command-line tool. Parses argv, handles
+ * early-exit flags (--help, --version, --config, hooks), resolves provider/
+ * model overrides, then dispatches to the annotation pipeline.
+ *
+ * Order matters here: flags that short-circuit execution are processed
+ * before configuration loading so they work even with a broken config.
 */
 async function runCLI() {
     rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -925,6 +944,11 @@ Options:
         return;
     }
 
+    /** [ds]
+     * Returns the value flagging the given CLI flag, or null if absent.
+     * Does NOT detect flags whose value looks like another flag (e.g. missing
+     * value followed by `--foo`), which callers must guard against separately.
+    */
     const getArgValue = (flag) => {
         const index = args.indexOf(flag);
         if (index !== -1 && index + 1 < args.length) {
@@ -933,8 +957,9 @@ Options:
         return null;
     };
 
+    // Defaults to the current directory; will be overridden by the first non-flag positional argument. [ds]
     let filepath = '.';
-    // Skip past flag keys that consume the next argument so the positional file path isn't mistaken for a flag value. [ds]
+    // Flags that consume the *next* argv element as their value — needed so the positional-argument scan below doesn't accidentally treat a flag's value (e.g. 'gemini' after --provider) as the target filepath. [ds]
     const flagKeys = ['--provider', '--model', '--api-key', '--base-url', '--concurrency', '--chunk-size'];
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -964,7 +989,7 @@ Options:
     const hasOverwriteFlag = args.includes('--overwrite');
     const hasKeepFlag = args.includes('--keep');
 
-    // Refuse to modify a dirty working tree unless the user explicitly forces it or is doing a dry run; prevents accidental loss of uncommitted changes. [ds]
+    // Guard against running on a dirty working tree so users can review/revert our edits via git. Skipped under NODE_ENV=test to keep tests hermetic, and bypassed with --force. [ds]
     if (process.env.NODE_ENV !== 'test' && isGitDirty() && !isForce && !isDryRun) {
         console.error("Error: Git working tree is dirty. Please commit or stash your changes, or use --force to bypass this check.");
         rl.close();
@@ -978,14 +1003,15 @@ Options:
     const cliApiKey = getArgValue('--api-key');
     const cliBaseUrl = getArgValue('--base-url');
 
-    // When a provider is supplied via CLI without an explicit model, fall back to a sensible default model per provider. [ds]
+    // When a provider is switched on the CLI without explicit model/baseUrl defaults, we hardcode sensible fallbacks per provider so the user doesn't have to remember model names. [ds]
     if (cliProvider) {
         config.provider = cliProvider;
         if (!cliModel) {
+            // Per-provider default model. Custom provider is intentionally not in this chain and falls through to the Groq-compatible default. [ds]
             config.model = cliProvider === 'gemini' ? 'gemini-2.0-flash' : (cliProvider === 'claude' ? 'claude-3-5-sonnet-20240620' : (cliProvider === 'deepseek' ? 'deepseek-chat' : (cliProvider === 'openai' ? 'gpt-4o' : 'llama-3.3-70b-versatile')));
         }
-        // Similarly, auto-fill the provider's base URL when none is given; Gemini uses null because its SDK constructs the URL differently. [ds]
         if (!cliBaseUrl) {
+            // Gemini uses null baseUrl to signal its native SDK path; other providers use OpenAI-compatible HTTP endpoints (hence the /openai suffix on Groq). [ds]
             config.baseUrl = cliProvider === 'gemini' ? null : (cliProvider === 'groq' ? 'https://api.groq.com/openai' : (cliProvider === 'openai' ? 'https://api.openai.com' : (cliProvider === 'claude' ? 'https://api.anthropic.com' : (cliProvider === 'deepseek' ? 'https://api.deepseek.com' : ''))));
         }
     }
@@ -996,37 +1022,47 @@ Options:
     let successCount = 0;
     let failCount = 0;
 
+    // Project fingerprint lets the config layer recognize previously-annotated projects and reuse cached settings. [ds]
     const projectFingerprint = getProjectFingerprint(filepath);
 
+    // Overwrite only when the user explicitly opted in via --overwrite or autoPrune, unless --keep is set to protect existing comments. [ds]
     const isOverwrite = (hasOverwriteFlag || config.autoPrune) && !hasKeepFlag;
 
-    // Concurrency is clamped to 1-5 to prevent excessive parallel LLM API calls / resource exhaustion [ds]
+    /** [ds]
+     * Parses CLI concurrency flag, clamping to safe range [1,5] to prevent
+     * resource exhaustion; falls back to 2 when arg is missing or invalid.
+    */
     const cliConcurrency = parseInt(getArgValue('--concurrency'), 10);
+    // Clamp concurrency to [1,5]; anything outside that range (including NaN from parseInt) silently falls back to 2 to avoid unbounded API fan-out. [ds]
     const concurrencyLevel = (cliConcurrency && cliConcurrency >= 1 && cliConcurrency <= 5) ? cliConcurrency : 2;
 
-    // Derive the chunk threshold and overlap from the user-supplied chunk size to keep related context adjacent between splits. [ds]
+    // Chunk size bounds prevent excessive memory use (too large) or API rate-limit [ds]
+    // failures from too many small requests (too small). Threshold/overlap are derived [ds]
+    // from chunk size to preserve retrieval fidelity when re-chunking. [ds]
     const cliChunkSize = parseInt(getArgValue('--chunk-size'), 10);
+    // chunkThreshold is slightly larger than chunkSize so files near the boundary don't get chunked prematurely; chunkOverlap preserves cross-boundary context. [ds]
     if (cliChunkSize && cliChunkSize >= 50 && cliChunkSize <= 2000) {
         config.chunkSize = cliChunkSize;
-        // Derive threshold and overlap from chunk size using ratios so related config values stay consistent [ds]
         config.chunkThreshold = Math.round(cliChunkSize * 1.25);
         config.chunkOverlap = Math.max(10, Math.round(cliChunkSize * 0.1));
     }
 
-    // Load user-defined ignore patterns from .devsplainignore; silently no-op if file is missing or unreadable [ds]
+    /** [ds]
+     * Loads .devsplainignore from the CWD. Format mirrors .gitignore: one glob
+     * per line, blank lines and lines beginning with '#' are ignored.
+    */
     let userIgnorePatterns = [];
     try {
         const ignorePath = path.join(process.cwd(), '.devsplainignore');
         if (fs.existsSync(ignorePath)) {
             const ignoreContent = fs.readFileSync(ignorePath, 'utf8');
-            // Split on CRLF or LF, then strip blank lines and comments (lines starting with '#') [ds]
+            // Split on CRLF or LF so patterns work cross-platform without stripping \r into the pattern. [ds]
             userIgnorePatterns = ignoreContent.split(/\r?\n/)
                 .map(line => line.trim())
                 .filter(line => line && !line.startsWith('#'));
         }
     } catch(e) {}
 
-    // Default folders to skip across JS/TS, Python, Java, and common editor/CI artifacts [ds]
     const defaultIgnoredFolders = [
         'node_modules', '.git', 'dist', 'build', 'out', 
         '.next', '.nuxt', '.svelte-kit', 
@@ -1037,18 +1073,17 @@ Options:
     const allIgnored = [...defaultIgnoredFolders, ...userIgnorePatterns];
 
     /** [ds]
-     * Determines whether a path should be ignored based on default folders and user patterns.
-     * Matches against basename, cwd-relative path, and prefix matches (directory + subpaths).
-     * Also supports simple '*suffix' globs since full glob matching is not required here.
+     * Determines if a path should be excluded from scanning. Matches by basename,
+     * exact relative path, descendant-of-directory, or suffix wildcard (e.g. *.min.js).
+     * Trailing slashes are stripped so patterns like 'dist/' behave like 'dist'.
     */
     function isPathIgnored(targetPath) {
         const filename = path.basename(targetPath);
-        // Normalize to forward slashes so patterns work consistently on Windows and POSIX [ds]
         const relPath = path.relative(process.cwd(), targetPath).replace(/\\/g, '/');
         for (const pattern of allIgnored) {
-            // Strip trailing slashes so 'node_modules/' matches both the folder and its contents [ds]
             const cleanPattern = pattern.replace(/\/$/, '').replace(/\\$/, '');
             if (filename === cleanPattern || relPath === cleanPattern || relPath.startsWith(cleanPattern + '/')) return true;
+            // Wildcard only supported as leading '*'; treated as filename suffix match (not full globbing). [ds]
             if (pattern.startsWith('*') && filename.endsWith(pattern.slice(1))) return true;
         }
         return false;
@@ -1061,8 +1096,9 @@ Options:
     ];
 
     /** [ds]
-     * Recursively walks targetPath, skipping ignored paths, non-source extensions, and empty files.
-     * Returns the list of file paths eligible for commenting.
+     * Recursively walks a directory tree collecting source files that match the
+     * whitelist of extensions. Ignored paths are pruned early, and empty files are
+     * skipped to avoid feeding no-op content to the analyzer.
     */
     function collectFiles(targetPath) {
         const collected = [];
@@ -1074,6 +1110,7 @@ Options:
             console.log(`\n Scanning directory: ${targetPath}`);
             const items = fs.readdirSync(targetPath);
             for (const item of items) {
+                // Spread-result pattern flattens nested arrays from recursive calls into a single list. [ds]
                 collected.push(...collectFiles(path.join(targetPath, item)));
             }
         } else if (stats.isFile()) {
@@ -1081,7 +1118,6 @@ Options:
             if (!validExtensions.includes(ext)) return collected;
 
             const data = fs.readFileSync(targetPath, 'utf-8');
-            // Skip files that are only whitespace - nothing to comment, avoids wasted LLM calls [ds]
             if (data.trim() === '') {
                 console.log(` Skipping ${path.basename(targetPath)} (Empty File)`);
                 return collected;
@@ -1092,8 +1128,9 @@ Options:
     }
 
     /** [ds]
-     * Runs the full commenting pipeline on a single file: strip existing comments, request new ones
-     * from the LLM, splice them back in, and write the result. Supports dry-run preview mode.
+     * Runs the analyze/clean/prune pipeline for a single file. In non-clean/prune
+     * modes, content is first pre-processed (pruned if overwriting, cleaned otherwise)
+     * so the analyzer doesn't see stale comments that could bias results.
     */
     async function processSingleFile(targetPath) {
         const filename = path.basename(targetPath);
@@ -1104,8 +1141,8 @@ Options:
         try {
             let comments = [];
             let commentedCode;
-            // For annotate modes, first strip existing comments (or prune them in overwrite mode) so the model [ds]
-            // sees only code and we avoid stacking new comments on top of stale ones [ds]
+            // Two-phase: strip existing comments before analysis so comment-generation isn't [ds]
+            // influenced by prior comments; then re-splice generated comments into cleaned data. [ds]
             if (mode !== 'clean' && mode !== 'prune') {
                 const preProcessMode = isOverwrite ? 'prune' : 'clean';
                 const cleanData = spliceComments(data, [], preProcessMode, ext);
@@ -1114,13 +1151,15 @@ Options:
             } else {
                 commentedCode = spliceComments(data, [], mode, ext);
             }
-            // Dry-run: preview output and require explicit 'write' confirmation before persisting [ds]
+            // Dry-run writes to a temp then prompts before atomically replacing the original, [ds]
+            // preserving the source if the user declines. [ds]
             if (isDryRun) {
                 console.log(`\n --- DRY RUN PREVIEW: ${filename} ---`);
                 console.log(commentedCode);
                 console.log(`---------------------------------------\n`);
                 const answer = await askQuestion("Type 'write' to save to file, or press any key to discard: ");
                 if (answer.toLowerCase() === 'write') {
+                    // Write-to-temp-then-rename ensures the destination is never left in a partially-written state. [ds]
                     const tempPath = targetPath + '.tmp';
                     fs.writeFileSync(tempPath, commentedCode, 'utf8');
                     fs.renameSync(tempPath, targetPath);
@@ -1129,7 +1168,6 @@ Options:
                     console.log(` Skipped ${targetPath}`);
                 }
             } else {
-                // Write via temp file + atomic rename to avoid corrupting the target if the process crashes mid-write [ds]
                 const tempPath = targetPath + '.tmp';
                 fs.writeFileSync(tempPath, commentedCode, 'utf8');
                 fs.renameSync(tempPath, targetPath);
@@ -1144,8 +1182,9 @@ Options:
 
     const filesToProcess = collectFiles(filepath);
 
-    // Dry-run needs interactive prompts and clean/prune are fast, so process sequentially; [ds]
-    // otherwise leverage the concurrency limiter for the LLM-bound annotate path [ds]
+    // Serial execution is forced for dry-run (needs user prompts) and clean/prune [ds]
+    // (mutating ops that should not race on shared state). Parallel mode is only for [ds]
+    // read-then-comment workloads. [ds]
     if (isDryRun || mode === 'clean' || mode === 'prune') {
         for (const file of filesToProcess) {
             await processSingleFile(file);
@@ -1156,7 +1195,7 @@ Options:
         await runWithConcurrency(filesToProcess, processSingleFile);
     }
 
-    // Exit non-zero only if every file failed - partial failures are reported but not fatal [ds]
+    // Catastrophic failure: nothing succeeded, so exit non-zero to signal CI/build pipelines. [ds]
     if (failCount > 0 && successCount === 0) {
         console.error("\nFailed: No files were successfully commented.");
         rl.close();
@@ -1171,7 +1210,7 @@ Options:
     rl.close();
 }
 
-// Dual entrypoint: runnable as CLI, but also importable as a module for testing/integration [ds]
+// Direct execution runs the CLI; import-as-module exposes internals for testing/embedding. [ds]
 if (require.main === module) {
     runCLI().catch(err => {
         console.error(err);
