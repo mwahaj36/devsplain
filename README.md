@@ -14,12 +14,13 @@ Unlike interactive AI editors, `devsplain` is designed for batch documentation p
 ## Key Features
 
 - **Deterministic Code Integrity Verification**: Uses an index-preserving splicing engine. Your non-comment source lines are guaranteed to remain byte-for-byte identical after comment insertion.
+- **Context-Aware Commenting** *(v2.4.0)*: Automatically injects a project fingerprint (from `package.json`) and a per-file structural skeleton (imports, declarations, exports) into every LLM prompt. Comments are now architecturally aware—they reference the project name, purpose, and cross-file relationships rather than just narrating local syntax.
 - **Multi-Language support**: Works across JavaScript, JSX, TypeScript, TSX, HTML, CSS, SCSS, Vue, Svelte, Python, Java, C, C++, C#, Go, Ruby, PHP, Rust, Swift, Kotlin, Dart, and Shell scripts.
 - **Comment Preservation & Tagging**: AI-generated comments are tagged with `[ds]`. Your manually written comments are safe and will never be touched by the engine.
 - **Local Deterministic Scrubber**: The `--clean` flag strips AI-generated `[ds]` comments locally using a deterministic lexical state machine—no LLM calls, API keys, or internet required.
 - **Git Hook Automation**: Supports an automated two-commit Git hook workflow (`pre-commit` for quality, `post-commit` for auto-generated documentation commits) that prevents recursive commit loops.
 - **Bring Your Own LLM**: Native setup wizard for Groq, Gemini, OpenAI, Claude, DeepSeek, or any OpenAI-compatible API endpoint (like Ollama or LMStudio).
-- **Exponential Backoff**: Resilient AI request handler that automatically retries rate-limited requests with exponential backoff.
+- **Adaptive Chunking & Rate Limit Handling**: Per-provider chunk profiles with dynamic tier scaling. Resilient request handler retries rate-limited requests with jittered exponential backoff.
 - **Headless & Override Control**: Configure via environment variables or override global config settings dynamically on the fly with command-line flags.
 
 ---
@@ -59,6 +60,28 @@ The line-splicing + round-trip diff approach achieves equivalent guarantees with
 4. The remaining source must match the original file exactly.
 
 If any non-comment source line differs, the operation aborts.
+
+### Context-Aware Commenting Engine
+
+One of the core limitations of file-by-file LLM commenting is **context myopia** — the model sees a chunk of code in isolation and has no idea what the broader project does, what other modules export, or how the current file fits into the system architecture.
+
+`devsplain` v2.4.0 solves this with a two-layer context injection system, added to every LLM prompt at zero AST cost:
+
+1. **Project Fingerprint** — Read once per run from `package.json` (`name`, `version`, `description`) or the first heading of `README.md`. Gives the model immediate domain context.
+   ```
+   // project: devsplain v2.4.0 — An agent-agnostic CLI tool that automatically adds JSDoc and inline comments...
+   ```
+
+2. **File Skeleton** — Extracted via regex (no AST parser) from the file being commented. Captures all `require`/`import` statements, top-level `function`/`class` declarations, and `module.exports` keys.
+   ```
+   // file-imports: const { getChunkConfig, PROVIDER_PROFILES } = require('./lib/llm.js') | ...
+   // file-defines: function selectOptimalProvider | function resolveChunkBudget | class RunStats | ...
+   // file-exports: module.exports = { selectOptimalProvider, resolveChunkBudget, ... }
+   ```
+
+Both layers are combined, hard-capped at **~150 tokens**, and injected with a fenced `read-only` marker so the model never generates comment objects pointing at context lines. This is safe for all free-tier providers (Groq, Gemini).
+
+**Measured impact:** Functions that previously received no comment (because their purpose was only clear from cross-file knowledge) now receive precise, domain-aware documentation. See [`E2E_RESULTS.md`](E2E_RESULTS.md) for the full before/after benchmark.
 
 ---
 
