@@ -295,7 +295,7 @@ function isLineInsideString(lines, targetLineIndex, ext = '') {
 
 /** [ds]
  * Scans source lines and reports which lines contain or are inside comments, handling language-specific string and comment syntax.
- * Tracks multi-line state (block comments, Python triple-quotes, C++ raw strings, regex literals, nested Rust/Swift /* */ blocks, HTML comments) so comment markers inside strings are not misdetected.
+ * Tracks multi-line state (block comments, Python triple-quotes, C++ raw strings, regex literals, nested Rust/Swift /* *​/ blocks, HTML comments) so comment markers inside strings are not misdetected.
  * @param {string[]} lines - Source file contents split by line.
  * @param {string} ext - File extension used to select language-specific rules.
  * @returns {Array} Per-line comment analysis results.
