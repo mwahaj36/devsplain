@@ -14,7 +14,7 @@ Unlike interactive AI editors, `devsplain` is designed for batch documentation p
 ## Key Features
 
 - **Deterministic Code Integrity Verification**: Uses an index-preserving splicing engine. Your non-comment source lines are guaranteed to remain byte-for-byte identical after comment insertion.
-- **Context-Aware Commenting** *(v2.4.0)*: Automatically injects a project fingerprint (from `package.json`) and a per-file structural skeleton (imports, declarations, exports) into every LLM prompt. Comments are now architecturally aware—they reference the project name, purpose, and cross-file relationships rather than just narrating local syntax.
+- **Context-Aware Commenting** *(v2.4.0)*: Automatically injects a project fingerprint (from `package.json`) and a per-file structural skeleton (imports, declarations, exports) into every LLM prompt. Comments can reference project purpose and file structure when that context adds useful information.
 - **Multi-Language support**: Works across JavaScript, JSX, TypeScript, TSX, HTML, CSS, SCSS, Vue, Svelte, Python, Java, C, C++, C#, Go, Ruby, PHP, Rust, Swift, Kotlin, Dart, and Shell scripts.
 - **Comment Preservation & Tagging**: AI-generated comments are tagged with `[ds]`. Your manually written comments are safe and will never be touched by the engine.
 - **Local Deterministic Scrubber**: The `--clean` flag strips AI-generated `[ds]` comments locally using a deterministic lexical state machine—no LLM calls, API keys, or internet required.
@@ -125,10 +125,10 @@ devsplain <file-or-directory> [options]
 
 | Flag | Description |
 |---|---|
-| *(Default)* | Balanced commenting. Generates a mix of JSDoc block comments above functions and sparse inline comments for complex logical branches. |
+| *(Default)* | Selective commenting. Documents non-obvious function purpose and adds sparse inline comments for meaningful edge cases, invariants, or trade-offs. |
 | `--light` | Minimalist commenting. Adds JSDoc/block comments above functions, leaving function bodies untouched. |
-| `--full` | Aggressive commenting. Explains complex logic blocks line-by-line inside functions. |
-| `--dry-run` | Preview comments in the terminal without writing to files. Prompts for manual save confirmation. |
+| `--full` | Detailed explanations of non-obvious function behavior and logic. Routine code is still left uncommented. |
+| `--dry-run` | Preview comments without writing by default. In an interactive terminal, type `write` to save the preview; in scripts and CI, it prints the preview and skips the prompt. |
 | `--force` | Bypasses the safety block check that prevents running `devsplain` on a dirty Git working tree. |
 | `--clean` | Scrubber mode. Deterministically removes only devsplain-generated comments tagged with `[ds]`, preserving your manual comments. |
 | `--prune` | Destructive scrubber mode. Removes ALL comments and docstrings from source files, including your own manual comments. |

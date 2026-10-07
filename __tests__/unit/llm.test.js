@@ -219,9 +219,9 @@ describe('LLM Module (getComments)', () => {
 
         const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
         const prompt = requestBody.messages[0].content;
-        expect(prompt).toContain('ANTI-TRIVIALITY RULES');
-        expect(prompt).toContain('NEVER write comments that merely narrate the syntax');
-        expect(prompt).toContain('Quality over quantity');
+        expect(prompt).toContain('COMMENT QUALITY RULES (APPLY IN EVERY MODE)');
+        expect(prompt).toContain('Omit comments that restate names or code');
+        expect(prompt).toContain('Prefer no comment over filler');
     });
 
     // ─── NEW: Chunking test ───────────────────────────────────────────────────

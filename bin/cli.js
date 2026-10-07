@@ -896,7 +896,7 @@ Usage:
 Options:
   --light             Add ONLY JSDoc/block comments above functions (minimalist)
   --full              Add detailed JSDoc/block comments and inline comments
-  --dry-run           Preview comments without writing to file
+  --dry-run           Preview comments; interactive terminals can choose to save
   --force             Bypass the dirty Git tree safety check
   --clean             Scrub only devsplain-generated [ds] comments
   --prune             Destructively scrub ALL comments from files
@@ -1151,21 +1151,24 @@ Options:
             } else {
                 commentedCode = spliceComments(data, [], mode, ext);
             }
-            // Dry-run writes to a temp then prompts before atomically replacing the original, [ds]
-            // preserving the source if the user declines. [ds]
+            // Dry-run previews output and only offers a save prompt when both streams are interactive. [ds]
             if (isDryRun) {
                 console.log(`\n --- DRY RUN PREVIEW: ${filename} ---`);
                 console.log(commentedCode);
                 console.log(`---------------------------------------\n`);
-                const answer = await askQuestion("Type 'write' to save to file, or press any key to discard: ");
-                if (answer.toLowerCase() === 'write') {
-                    // Write-to-temp-then-rename ensures the destination is never left in a partially-written state. [ds]
-                    const tempPath = targetPath + '.tmp';
-                    fs.writeFileSync(tempPath, commentedCode, 'utf8');
-                    fs.renameSync(tempPath, targetPath);
-                    console.log(` Successfully saved ${targetPath}`);
+                if (process.stdin.isTTY && process.stdout.isTTY) {
+                    const answer = await askQuestion("Type 'write' to save to file, or press any key to discard: ");
+                    if (answer.toLowerCase() === 'write') {
+                        // Write-to-temp-then-rename ensures the destination is never left in a partially-written state. [ds]
+                        const tempPath = targetPath + '.tmp';
+                        fs.writeFileSync(tempPath, commentedCode, 'utf8');
+                        fs.renameSync(tempPath, targetPath);
+                        console.log(` Successfully saved ${targetPath}`);
+                    } else {
+                        console.log(` Skipped ${targetPath}`);
+                    }
                 } else {
-                    console.log(` Skipped ${targetPath}`);
+                    console.log(` Skipped saving ${targetPath} (non-interactive dry run).`);
                 }
             } else {
                 const tempPath = targetPath + '.tmp';
@@ -1182,8 +1185,8 @@ Options:
 
     const filesToProcess = collectFiles(filepath);
 
-    // Serial execution is forced for dry-run (needs user prompts) and clean/prune [ds]
-    // (mutating ops that should not race on shared state). Parallel mode is only for [ds]
+    // Serial execution keeps dry-run previews ordered and clean/prune operations from racing. [ds]
+    // Parallel mode is only for [ds]
     // read-then-comment workloads. [ds]
     if (isDryRun || mode === 'clean' || mode === 'prune') {
         for (const file of filesToProcess) {
